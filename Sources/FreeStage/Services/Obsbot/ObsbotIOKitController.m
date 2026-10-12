@@ -28,6 +28,20 @@ static const UInt16 kObsbotVendorID = 0x3564;
 }
 
 - (nullable NSString *)connectWithProductIDs:(NSArray<NSNumber *> *)productIDs {
+    return [self connectWithProductIDs:productIDs locationID:0];
+}
+
+- (UInt32)locationIDForService:(io_service_t)service {
+    CFNumberRef locRef = IORegistryEntryCreateCFProperty(service, CFSTR("locationID"), kCFAllocatorDefault, 0);
+    UInt32 loc = 0;
+    if (locRef) {
+        CFNumberGetValue(locRef, kCFNumberSInt32Type, &loc);
+        CFRelease(locRef);
+    }
+    return loc;
+}
+
+- (nullable NSString *)connectWithProductIDs:(NSArray<NSNumber *> *)productIDs locationID:(UInt32)locationID {
     [self disconnect];
 
     kern_return_t kr;
@@ -59,11 +73,39 @@ static const UInt16 kObsbotVendorID = 0x3564;
             continue;
         }
 
-        io_service_t service = IOIteratorNext(iterator);
+        // With several identical cameras attached, PIDs collide — walk every
+        // candidate and prefer the one at the requested location ID.
+        io_service_t first = 0;
+        io_service_t match = 0;
+        io_service_t svc = 0;
+        while ((svc = IOIteratorNext(iterator)) != 0) {
+            if (first == 0) {
+                first = svc;
+            }
+            if (locationID != 0 && match == 0) {
+                UInt32 loc = [self locationIDForService:svc];
+                NSLog(@"[ObsbotIOKit] candidate PID 0x%04x location 0x%08x", pid, loc);
+                if (loc == locationID) {
+                    match = svc;
+                    break;
+                }
+            }
+            if (svc != first) {
+                IOObjectRelease(svc);
+            }
+        }
         if (iterator) IOObjectRelease(iterator);
+
+        io_service_t service = match ? match : first;
+        if (match && first && first != match) {
+            IOObjectRelease(first);
+        }
 
         if (!service) {
             continue;
+        }
+        if (locationID != 0 && match == 0) {
+            NSLog(@"[ObsbotIOKit] location 0x%08x not found; using first match", locationID);
         }
 
         _usbDeviceService = service;
@@ -148,7 +190,7 @@ static const UInt16 kObsbotVendorID = 0x3564;
     memset(&request, 0, sizeof(request));
     request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
     request.bRequest = 0x01; // UVC SET_CUR
-    request.wValue = selector;
+    request.wValue = (UInt16)(selector << 8); // wValue = selector << 8 (matches official SDK frames)
     request.wIndex = ((UInt16)unit << 8) | 0; // interface 0
     request.wLength = (UInt16)bytes.length;
     request.pData = (void *)bytes.bytes;
@@ -173,7 +215,7 @@ static const UInt16 kObsbotVendorID = 0x3564;
     memset(&request, 0, sizeof(request));
     request.bmRequestType = USBmakebmRequestType(kUSBIn, kUSBClass, kUSBInterface);
     request.bRequest = bRequest;
-    request.wValue = selector;
+    request.wValue = (UInt16)(selector << 8); // wValue = selector << 8 (matches official SDK frames)
     request.wIndex = ((UInt16)unit << 8) | 0; // interface 0
     request.wLength = (UInt16)length;
     request.pData = data.mutableBytes;

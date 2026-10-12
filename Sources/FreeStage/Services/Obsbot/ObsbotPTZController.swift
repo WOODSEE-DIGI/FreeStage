@@ -16,8 +16,11 @@
 //  Coordinate frames (kept in one place, conversions are one-liners):
 //
 //    FreeStage/user frame:  pan + = camera pans RIGHT, tilt + = camera tilts UP.
-//    Vendor V3 wire frame:  yaw + = camera's LEFT, pitch + = DOWN.
-//    UVC absolute frame:    pan + = LEFT (1/10000°), tilt + = UP.
+//    Vendor V3 wire frame:  pan + = LEFT, pitch + = DOWN, degrees (sniffed
+//      from the official SDK; same-sign verified: command sign == reading delta).
+//    No UVC pan/tilt control exists on the Tiny 3 Lite (descriptor dump), and
+//      no absolute-angle V3 command either — absolute framing is closed-loop
+//      (read encoders → pulse speeds → re-read until arrival).
 //    OSC frame:             same as vendor wire (pan + = left, pitch + = down),
 //                           degrees, pan ∈ [-129, 129], pitch ∈ [-59, 59].
 //
@@ -39,12 +42,14 @@ private final class ObsbotUSBLink: @unchecked Sendable {
 
     var isConnected: Bool { controller.isConnected }
 
-    /// Open the first attached OBSBOT matching the given PIDs (tried in order).
+    /// Open the attached OBSBOT matching the given PIDs (tried in order),
+    /// preferring the given USB location ID (0 = first match). The location
+    /// disambiguates identical cameras on the same bus.
     /// Returns the device name on success.
-    func connect(productIDs: [UInt16]) -> String? {
+    func connect(productIDs: [UInt16], locationID: UInt32 = 0) -> String? {
         queue.sync {
             let numbers = productIDs.map { NSNumber(value: $0) }
-            let name = controller.connect(withProductIDs: numbers)
+            let name = controller.connect(withProductIDs: numbers, locationID: locationID)
             if let name {
                 Self.logger.info("OBSBOT USB connected: \(name, privacy: .public)")
             } else {
@@ -108,6 +113,11 @@ final class ObsbotPTZController {
     /// Move speed for absolute moves (degrees of the leading axis per second
     /// hint; the firmware maps it internally). 0 = device default.
     var moveSpeed: Double = 30
+    /// Jog speed for direction-pad nudges (wire-frame degrees/second).
+    var nudgeSpeed: Double = 25
+    /// Repeats the active jog command while a pad arrow is held (some
+    /// firmware treats a speed frame as a momentary pulse).
+    private var nudgeLoop: Task<Void, Never>?
 
     // MARK: Private state
 
@@ -118,6 +128,26 @@ final class ObsbotPTZController {
     private var pendingMove: (pan: Double, tilt: Double)?
     private var moveLoop: Task<Void, Never>?
     private var usbSequence: UInt16 = 0
+    /// Status poll loop (selector 0x06 read): the official library polls this
+    /// channel continuously; the 60-byte blocks carry live device status and
+    /// may gate write acceptance. Changes are logged for analysis.
+    private var statusLoop: Task<Void, Never>?
+    private var lastStatusHead: String?
+
+    /// AI-roam watchdog: first encoder reading after connect + whether any
+    /// nonzero speed has been sent since. If the head drifts with no commands
+    /// sent, AI tracking owns the motors (our ai-off was ignored).
+    private var connectBaseline: (pan: Double, tilt: Double)?
+    private var speedsSentSinceConnect = false
+    private var roamCheckDone = false
+
+    /// When the current closed-loop move started (nil = no move in progress).
+    /// Safety stop fires after Self.closedLoopTimeout.
+    private var moveStart: Date?
+    private static let closedLoopTimeout: TimeInterval = 8.0
+    private static let arrivalTolerance: Double = 1.5 // degrees per axis
+    private static let speedGain: Double = 3.0 // (deg/s) per degree of error
+    private static let maxSpeed: Double = 60.0 // deg/s
 
     // Auto-stow wake state (the Tiny parks its motors after idle; while asleep
     // it ACKs pan/tilt writes but nothing physically moves).
@@ -140,10 +170,21 @@ final class ObsbotPTZController {
         return usbSequence
     }
 
+    /// One-line frame diagnostic: label + IOKit result + first 22 bytes hex
+    /// (header + cmd + plen + CRC + payload head). Compare against sniffed
+    /// official frames when debugging ignored commands.
+    private func logFrame(_ label: String, _ frame: [UInt8], ok: Bool) {
+        let head = frame.prefix(22).map { String(format: "%02x", $0) }.joined(separator: " ")
+        GimbalLog.log("\(label) ok=\(ok) [\(head)]")
+    }
+
     /// Connect over the selected transport. Tears down any prior connection first.
     func connect(transport: Transport, captureUniqueID: String?) {
         disconnect()
         lastError = nil
+        connectBaseline = nil
+        speedsSentSinceConnect = false
+        roamCheckDone = false
 
         switch transport {
         case .usb:
@@ -156,6 +197,10 @@ final class ObsbotPTZController {
     func disconnect() {
         moveLoop?.cancel()
         moveLoop = nil
+        statusLoop?.cancel()
+        statusLoop = nil
+        nudgeLoop?.cancel()
+        nudgeLoop = nil
         pendingMove = nil
         usb.disconnect()
         oscConnection?.cancel()
@@ -178,7 +223,9 @@ final class ObsbotPTZController {
             pids.insert(pid, at: 0)
         }
 
-        guard let name = usb.connect(productIDs: pids) else {
+        let locationID = Self.locationID(fromCaptureUniqueID: captureUniqueID) ?? 0
+        GimbalLog.log("USB connect targeting location 0x\(String(locationID, radix: 16))")
+        guard let name = usb.connect(productIDs: pids, locationID: locationID) else {
             lastError = "No OBSBOT camera reachable over USB."
             GimbalLog.log("USB connect FAILED (no device reachable for PIDs \(pids.map { String(format: "0x%04x", $0) }.joined(separator: ",")))")
             return
@@ -191,10 +238,160 @@ final class ObsbotPTZController {
         GimbalLog.log("USB connected: \(name)")
         discoverUSBRanges()
         startMoveLoop()
-        // Wake the gimbal immediately so it is out of auto-stow and ready to
-        // accept the first move (moves also self-wake via ensureAwake).
-        Task { await self.sendWake() }
-        Task { await refreshPosition() }
+        startStatusPoll()
+        // Ordered startup, mirroring the official flow: session open
+        // (seqs 0/1/2) first, then wake, AI-off, and the first encoder read.
+        Task { [weak self] in
+            guard let self else { return }
+            await self.openSession()
+            _ = await self.sendWake()
+            await self.disableTracking()
+            await self.refreshPosition()
+        }
+        // Roam check: 20 s after connect, with no speeds sent in between, the
+        // encoders must be still. Drift proves AI tracking owns the gimbal.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            guard let self, self.isConnected, self.activeTransport == .usb, !self.roamCheckDone else { return }
+            self.roamCheckDone = true
+            guard !self.speedsSentSinceConnect, let base = self.connectBaseline else {
+                GimbalLog.log("roam check skipped (commands were sent since connect)")
+                return
+            }
+            guard let pose = await self.readAttitude() else {
+                GimbalLog.log("roam check skipped (read failed)")
+                return
+            }
+            let driftPan = abs(-pose.pan - base.pan)
+            let driftTilt = abs(-pose.pitch - base.tilt)
+            let drift = max(driftPan, driftTilt)
+            if drift > 3.0 {
+                GimbalLog.log("AI-ROAMING suspected: head drifted \(driftPan)/\(driftTilt)° with zero commands sent — AI tracking owns the motors")
+            } else {
+                GimbalLog.log("roam check: head still (drift \(driftPan)/\(driftTilt)°) — motors accept our session")
+            }
+        }
+    }
+
+    /// Drain queued reply frames: GET repeatedly until consecutive misses.
+    /// The firmware queues replies (and request echoes); every GET consumes
+    /// one frame. Returns the last AA-framed 60-byte reply seen, if any.
+    /// One synchronous transaction: send a request frame, then poll for ITS
+    /// reply — an AA frame echoing our command AND sequence — up to `timeout`.
+    /// Anything else (request echoes, stale replies) is consumed and skipped.
+    /// Strictly serial pacing mirrors the official library; blasting frames
+    /// makes the firmware answer late and jumbled.
+    private func transact(_ frame: [UInt8], timeout: TimeInterval = 4.0) async -> [UInt8]? {
+        guard frame.count >= 16 else { return nil }
+        let cmd = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
+        let seq = UInt16(frame[2]) | (UInt16(frame[3]) << 8)
+        let sent: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async { [usb] in
+                continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
+            }
+        }
+        guard sent else {
+            GimbalLog.log("transact cmd=0x\(String(cmd, radix: 16)) seq=\(seq): write FAILED")
+            return nil
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        var strained = 0
+        while Date() < deadline {
+            let reply: [UInt8]? = await withCheckedContinuation { (continuation: CheckedContinuation<[UInt8]?, Never>) in
+                DispatchQueue.global(qos: .userInitiated).async { [usb] in
+                    continuation.resume(returning: usb.read(length: 60, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
+                }
+            }
+            if let r = reply, r.count >= 16, r[0] == ObsbotV3Protocol.magic {
+                let rcmd = UInt16(r[10]) | (UInt16(r[11]) << 8)
+                let rseq = UInt16(r[2]) | (UInt16(r[3]) << 8)
+                if rcmd == cmd && rseq == seq {
+                    return r
+                }
+                strained += 1
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        GimbalLog.log("transact cmd=0x\(String(cmd, radix: 16)) seq=\(seq): TIMEOUT (\(strained) stray frames drained)")
+        return nil
+    }
+
+    /// Session-open handshake, byte-identical to the official library's
+    /// post-connect flow (receiver 0x0d, flags 0x01, explicit seqs 0/1/2).
+    /// The q0 (0x1808) reply payload IS the 24-byte device UUID; its last
+    /// 4 bytes are needed by the bind frame (per-camera, not hardcoded).
+    private func openSession() async {
+        var uuidLast4: [UInt8] = [0x92, 0x9D, 0xC9, 0xBE] // fallback (RMOWUHI1283QVS)
+        let queries: [(UInt16, UInt16)] = [
+            (ObsbotV3Protocol.cmdSession1, 0),
+            (ObsbotV3Protocol.cmdSession2, 1),
+            (ObsbotV3Protocol.cmdSession3, 2),
+        ]
+        for (cmd, seq) in queries {
+            let frame = ObsbotV3Protocol.buildFrame(cmd: cmd, receiver: ObsbotV3Protocol.receiverSession, flags: ObsbotV3Protocol.flagsGet, payload: [], sequence: seq)
+            if let reply = await transact(frame) {
+                let head = reply.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+                GimbalLog.log("session q\(seq) cmd=0x\(String(cmd, radix: 16)) ok [\(head)]")
+                // q0 reply: plen=24, payload = 24-byte device UUID.
+                // Bind frame needs its last 4 bytes — extract dynamically so
+                // every Tiny 3 Lite (not just RMOWUHI1283QVS) binds correctly.
+                if seq == 0, reply.count >= 40 {
+                    let plen = Int(UInt16(reply[12]) | (UInt16(reply[13]) << 8))
+                    if plen >= 24 {
+                        uuidLast4 = Array(reply[36..<40])
+                        let uuidHex = reply[16..<40].map { String(format: "%02x", $0) }.joined()
+                        GimbalLog.log("device UUID (from q0 reply): \(uuidHex) → bind tail [\(uuidLast4.map { String(format: "%02x", $0) }.joined(separator: " "))]")
+                    }
+                }
+            } else {
+                GimbalLog.log("session q\(seq) cmd=0x\(String(cmd, radix: 16)) FAILED")
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        // Session bind (4th query): per-camera UUID tail inline, explicit seq 3.
+        // The firmware answers it (AA echo of cmd 0x18C8 + device serial in ASCII).
+        let bind = ObsbotV3Protocol.sessionBindFrame(uuidLast4: uuidLast4, sequence: 3)
+        if let reply = await transact(bind) {
+            let head = reply.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+            GimbalLog.log("session bind ok [\(head)]")
+            // Bind reply plen=14, payload = device serial number in ASCII.
+            if reply.count >= 30 {
+                let plen = Int(UInt16(reply[12]) | (UInt16(reply[13]) << 8))
+                if plen >= 14 {
+                    let serial = String(bytes: reply[16..<(16 + min(plen, 14))], encoding: .ascii) ?? "?"
+                    GimbalLog.log("device serial (from bind reply): \(serial)")
+                }
+            }
+        } else {
+            GimbalLog.log("session bind FAILED")
+        }
+        usbSequence = 4 // handshake consumed seqs 0..3; continue monotonically
+    }
+
+    /// Poll the status channel (UVC GET, selector 0x06, 60 bytes) twice per
+    /// second, mirroring the official library. Logs only on change.
+    private func startStatusPoll() {
+        statusLoop?.cancel()
+        lastStatusHead = nil
+        statusLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.isConnected, self.activeTransport == .usb else { return }
+                let head: String? = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                    DispatchQueue.global(qos: .utility).async { [usb] in
+                        guard let bytes = usb.read(length: 60, selector: ObsbotV3Protocol.selectorStatus, unit: ObsbotV3Protocol.xuUnit) else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        continuation.resume(returning: bytes.prefix(32).map { String(format: "%02x", $0) }.joined(separator: " "))
+                    }
+                }
+                if let head, head != self.lastStatusHead {
+                    self.lastStatusHead = head
+                    GimbalLog.log("status block: \(head)")
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
     }
 
     private func connectOSC() {
@@ -233,6 +430,7 @@ final class ObsbotPTZController {
         let clampedPan = min(max(pan, panRange.lowerBound), panRange.upperBound)
         let clampedTilt = min(max(tilt, tiltRange.lowerBound), tiltRange.upperBound)
         pendingMove = (pan: clampedPan, tilt: clampedTilt)
+        moveStart = nil
         currentPan = clampedPan
         currentTilt = clampedTilt
     }
@@ -240,6 +438,55 @@ final class ObsbotPTZController {
     /// Recenter the gimbal (send to 0/0 within the physical range).
     func recenter() {
         moveTo(pan: 0, tilt: 0)
+    }
+
+    // MARK: - Direction-pad jogging (no position reads needed)
+
+    /// Start jogging the head. Speeds are WIRE frame (pitch + = down,
+    /// pan + = left), degrees/second — the view converts from user frame.
+    /// Fire-and-forget: works even when encoder reads fail.
+    func nudgeStart(pitchWire: Double, panWire: Double) {
+        guard isConnected else { return }
+        if activeTransport == .usb {
+            nudgeLoop?.cancel()
+            nudgeLoop = Task { [weak self] in
+                guard let self else { return }
+                self.speedsSentSinceConnect = true
+                await self.ensureTrackingOff()
+                // Send immediately, then refresh ~4×/s until nudgeStop cancels.
+                var first = true
+                while !Task.isCancelled {
+                    let frame = ObsbotV3Protocol.speedCommand(roll: 0, pitch: pitchWire, pan: panWire, sequence: self.nextUSBSequence())
+                    let ok = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                        DispatchQueue.global(qos: .userInitiated).async { [usb] in
+                            continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
+                        }
+                    }
+                    if first {
+                        self.logFrame("nudge start wire(pitch=\(pitchWire),pan=\(panWire))", frame, ok: ok)
+                        first = false
+                    }
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+            }
+        } else {
+            // OSC fallback: one small absolute step in the pressed direction
+            // (wire + = user − on both axes).
+            let stepPan = panWire == 0 ? 0 : (panWire > 0 ? -5.0 : 5.0)
+            let stepTilt = pitchWire == 0 ? 0 : (pitchWire > 0 ? -5.0 : 5.0)
+            moveTo(pan: currentPan + stepPan, tilt: currentTilt + stepTilt)
+        }
+    }
+
+    /// Stop a jog started by nudgeStart.
+    func nudgeStop() {
+        nudgeLoop?.cancel()
+        nudgeLoop = nil
+        guard isConnected, activeTransport == .usb else { return }
+        Task { [weak self] in
+            await self?.sendStop()
+            GimbalLog.log("nudge stop")
+        }
     }
 
     /// Start the coalescing drain loop if not already running.
@@ -295,12 +542,10 @@ final class ObsbotPTZController {
     /// exactly the failure we observed (moves ACKed, head never moved).
     ///
     /// Transport strategy:
+    ///  - USB: sniffed `aiEnable(false)` frame (receiver 0x04, cmd 0x0244,
+    ///    payload [00]) — the official library's own call, rc=0, verified.
     ///  - OSC: the documented `/OBSBOT/WebCam/Tiny/SetAiMode` with arg 0 (mode 0
     ///    = the least track-y mode on the Tiny 3 Lite, which has no "off").
-    ///  - USB: a framed V3 SET to the AI-mode command. The wire command id is
-    ///    best-effort (not confirmed for the Tiny 3 Lite); if the firmware
-    ///    ignores it the gimbal simply stays under AI control and the move is a
-    ///    no-op - harmless, and we log it so the failure is visible.
     /// Returns true if a control write was delivered.
     @discardableResult
     private func disableTracking() async -> Bool {
@@ -315,23 +560,16 @@ final class ObsbotPTZController {
             lastTrackingDisableAt = Date()
             return true
         case .usb:
-            // Best-effort V3 SET to the AI-mode command (mode = none/0).
-            // Payload: single little-endian Int32 = 0 (AIWorkModeNone).
-            let payload: [UInt8] = [0, 0, 0, 0]
-            let sequence = nextUSBSequence()
-            let frame = ObsbotV3Protocol.buildSetFrame(
-                cmd: Self.cmdAiModeSet,
-                receiver: ObsbotV3Protocol.receiverDevice,
-                payload: payload,
-                sequence: sequence
-            )
+            // Sniffed aiEnable(false): receiver 0x04, cmd 0x0244, payload [00].
+            let frame = ObsbotV3Protocol.aiEnableCommand(false, sequence: nextUSBSequence())
             let ok = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 DispatchQueue.global(qos: .userInitiated).async { [usb] in
                     continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
                 }
             }
-            NSLog("[ObsbotPTZ] tracking-off (USB cmd 0x%04X) ok=%d", Self.cmdAiModeSet, ok ? 1 : 0)
-            GimbalLog.log("tracking-off: USB cmd 0x\(String(Self.cmdAiModeSet, radix: 16)) ok=\(ok)")
+            NSLog("[ObsbotPTZ] tracking-off (USB aiEnable=0) ok=%d", ok ? 1 : 0)
+            GimbalLog.log("tracking-off: USB aiEnable(false) ok=\(ok)")
+            self.logFrame("tracking-off frame", frame, ok: ok)
             trackingDisabled = ok
             lastTrackingDisableAt = Date()
             return ok
@@ -350,10 +588,6 @@ final class ObsbotPTZController {
         }
     }
 
-    /// Best-effort V3 wire command id for "set AI work mode". Not confirmed for
-    /// the Tiny 3 Lite; the Tiny 2 family uses the V3 SET command space near the
-    /// gimbal-move commands. Harmless if the firmware ignores it.
-    private static let cmdAiModeSet: UInt16 = 0x64C0
 
 
     private func sendMove(_ panUser: Double, _ tiltUser: Double) async {
@@ -364,27 +598,10 @@ final class ObsbotPTZController {
             // silently accepted by a parked gimbal.
             await ensureTrackingOff()
             await ensureAwake()
-            // Vendor V3 absolute move: wire yaw+ = left, pitch+ = down. Fire-and-
-            // forget: the firmware does not reliably acknowledge gimbal moves.
-            let yaw = Float(-panUser)
-            let pitch = Float(-tiltUser)
-            let sequence = nextUSBSequence()
-            let frame = ObsbotV3Protocol.gimbalMoveToAngle(roll: 0, pitch: pitch, yaw: yaw, sequence: sequence)
-            let v3OK = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                DispatchQueue.global(qos: .userInitiated).async { [usb] in
-                    continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
-                }
-            }
-            // The V3 angle command is ignored by some firmware. Also issue the
-            // standard UVC absolute write (known conventions), which is the
-            // reference's documented fallback. Whichever the hardware honors
-            // moves the camera; running both is harmless.
-            let uvcOK = sendUVCAbsoluteMove(panUser: panUser, tiltUser: tiltUser)
-            NSLog("[ObsbotPTZ] move user(%.1f,%.1f) v3=%d uvc=%d", panUser, tiltUser, v3OK ? 1 : 0, uvcOK ? 1 : 0)
-            GimbalLog.log("move user(\(panUser),\(tiltUser)) → wire yaw=\(Float(-panUser)) pitch=\(Float(-tiltUser)) v3=\(v3OK) uvc=\(uvcOK)")
-            if !v3OK && !uvcOK {
-                Self.logger.error("OBSBOT USB move FAILED (pan \(panUser, privacy: .public), tilt \(tiltUser, privacy: .public))")
-            }
+            // No absolute-angle command exists on the Tiny 3 Lite, so this is
+            // one closed-loop step toward the user-frame target (the 25 Hz
+            // drain loop calls back until arrival or timeout).
+            await driveToward(pan: panUser, tilt: tiltUser)
         case .osc:
             // OSC absolute move: same wire convention as vendor (pan + = left,
             // pitch + = down), degrees. Speed 0-90.
@@ -399,33 +616,84 @@ final class ObsbotPTZController {
         }
     }
 
-    /// Standard UVC `CT_PANTILT_ABSOLUTE` write (selector 0x0D, camera terminal
-    /// unit 0x01). 8-byte payload: pan Int32 + tilt Int32, little-endian,
-    /// units of 1/3600° (arcseconds). UVC sign convention: pan + = camera's
-    /// LEFT, tilt + = UP. FreeStage user frame: pan + = right, tilt + = up.
-    /// Returns true if the control transfer succeeded.
-    private func sendUVCAbsoluteMove(panUser: Double, tiltUser: Double) -> Bool {
-        // user pan + = right  → UVC pan + = left, so negate.
-        // user tilt + = up    → UVC tilt + = up, so pass through.
-        let panArcSec = Int32((-panUser * 3600.0).rounded())
-        let tiltArcSec = Int32((tiltUser * 3600.0).rounded())
-
-        var payload = [UInt8]()
-        payload.append(contentsOf: Self.int32LEBytes(panArcSec))
-        payload.append(contentsOf: Self.int32LEBytes(tiltArcSec))
-
-        return usb.send(payload, selector: ObsbotV3Protocol.ctPanTiltAbsolute, unit: ObsbotV3Protocol.ctUnit)
+    /// Read the motor encoders (wire frame: roll/pitch/pan degrees).
+    /// The firmware answers the request asynchronously: after the SET, the
+    /// 60-byte reply is polled (the official library resends/retries the same
+    /// way). Returns nil if nothing valid arrives.
+    /// Read the motor encoders via one synchronous transaction
+    /// (request + matching AA reply, up to 4 s).
+    private func readAttitude() async -> (roll: Double, pitch: Double, pan: Double)? {
+        let frame = ObsbotV3Protocol.attitudeGetCommand(sequence: nextUSBSequence())
+        guard let reply = await transact(frame) else {
+            GimbalLog.log("attitude read FAILED (no matching reply)")
+            return nil
+        }
+        guard let pose = ObsbotV3Protocol.parseAttitudeReply(reply) else {
+            let head = reply.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+            GimbalLog.log("attitude reply rejected validation [\(head)]")
+            return nil
+        }
+        return (roll: pose.roll, pitch: pose.pitch, pan: pose.pan)
     }
 
-    /// Little-endian byte encoding of an Int32.
-    private static func int32LEBytes(_ value: Int32) -> [UInt8] {
-        let u = UInt32(bitPattern: value)
-        return [
-            UInt8(u & 0xFF),
-            UInt8((u >> 8) & 0xFF),
-            UInt8((u >> 16) & 0xFF),
-            UInt8((u >> 24) & 0xFF),
-        ]
+    /// Send a speed frame (wire frame, degrees/second). Zeros stop the head.
+    private func sendSpeed(roll: Double, pitch: Double, pan: Double) async -> Bool {
+        if pitch != 0 || pan != 0 { speedsSentSinceConnect = true }
+        let frame = ObsbotV3Protocol.speedCommand(roll: roll, pitch: pitch, pan: pan, sequence: nextUSBSequence())
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async { [usb] in
+                continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
+            }
+        }
+    }
+
+    private func sendStop() async {
+        _ = await sendSpeed(roll: 0, pitch: 0, pan: 0)
+    }
+
+    /// One closed-loop step toward a user-frame (pan + = right, tilt + = up)
+    /// target: read the encoders, pulse proportional speeds, stop on arrival.
+    private func driveToward(pan panUser: Double, tilt tiltUser: Double) async {
+        if moveStart == nil { moveStart = Date() }
+        if let start = moveStart, Date().timeIntervalSince(start) > Self.closedLoopTimeout {
+            await sendStop()
+            pendingMove = nil
+            moveStart = nil
+            lastError = "Gimbal move timed out."
+            GimbalLog.log("driveToward TIMEOUT at user(\(panUser),\(tiltUser))")
+            return
+        }
+        guard let pose = await readAttitude() else {
+            await sendStop()
+            pendingMove = nil
+            moveStart = nil
+            lastError = "Gimbal read failed; move aborted."
+            GimbalLog.log("driveToward ABORTED (attitude read failed)")
+            return
+        }
+        // Wire frame: pitch + = down, pan + = left. User frame flips both.
+        // (Same-sign command→reading mapping verified against official SDK
+        // traffic; if motion ever appears mirrored, flip these negations.)
+        let errPan = -panUser - pose.pan
+        let errTilt = -tiltUser - pose.pitch
+        if abs(errPan) < Self.arrivalTolerance, abs(errTilt) < Self.arrivalTolerance {
+            await sendStop()
+            pendingMove = nil
+            moveStart = nil
+            currentPan = -pose.pan
+            currentTilt = -pose.pitch
+            GimbalLog.log("driveToward ARRIVED user(\(panUser),\(tiltUser)) encoders(pan=\(pose.pan),pitch=\(pose.pitch))")
+            return
+        }
+        let speedPan = min(max(errPan * Self.speedGain, -Self.maxSpeed), Self.maxSpeed)
+        let speedTilt = min(max(errTilt * Self.speedGain, -Self.maxSpeed), Self.maxSpeed)
+        let ok = await sendSpeed(roll: 0, pitch: speedTilt, pan: speedPan)
+        currentPan = -pose.pan
+        currentTilt = -pose.pitch
+        GimbalLog.log("driveToward step target=(\(panUser),\(tiltUser)) enc=(\(pose.pan),\(pose.pitch)) err=(\(errPan),\(errTilt)) spd=(\(speedPan),\(speedTilt)) ok=\(ok)")
+        if !ok {
+            Self.logger.error("OBSBOT USB speed send FAILED")
+        }
     }
 
     // MARK: - Position
@@ -435,7 +703,7 @@ final class ObsbotPTZController {
         guard isConnected else { return }
         switch activeTransport {
         case .usb:
-            refreshUSBPosition()
+            await refreshUSBPosition()
         case .osc:
             requestOSCPosition()
         case .none:
@@ -443,71 +711,34 @@ final class ObsbotPTZController {
         }
     }
 
-    /// Assemble a little-endian Int32 from bytes without shifting into the sign
-    /// bit (a naive `Int32(b[o+3]) << 24` traps on values ≥ 0x80).
-    private static func int32LE(_ b: [UInt8], _ o: Int) -> Int32 {
-        let u = UInt32(b[o]) |
-            (UInt32(b[o + 1]) << 8) |
-            (UInt32(b[o + 2]) << 16) |
-            (UInt32(b[o + 3]) << 24)
-        return Int32(bitPattern: u)
-    }
-
-    private func refreshUSBPosition() {
-        // UVC CT_PANTILT_ABSOLUTE GET_CUR: pan Int32 + tilt Int32, LE,
-        // units 1/3600° (arcseconds). UVC sign convention: pan + = left,
-        // tilt + = up.
-        guard let bytes = usb.read(length: 8, selector: ObsbotV3Protocol.ctPanTiltAbsolute, unit: ObsbotV3Protocol.ctUnit),
-              bytes.count == 8
-        else {
+    private func refreshUSBPosition() async {
+        // Motor-encoder read: receiver 0x03, cmd 0x0043, empty payload;
+        // 60-byte reply validated (magic, echoed cmd, both CRCs).
+        guard let pose = await readAttitude() else {
             lastError = "Gimbal position read failed."
-            NSLog("[ObsbotPTZ] position read failed (selector=0x%02X unit=0x%02X)", ObsbotV3Protocol.ctPanTiltAbsolute, ObsbotV3Protocol.ctUnit)
-            GimbalLog.log("position read FAILED (selector=0x\(String(ObsbotV3Protocol.ctPanTiltAbsolute, radix: 16)) unit=0x\(String(ObsbotV3Protocol.ctUnit, radix: 16)))")
+            NSLog("[ObsbotPTZ] position read failed (attitude GET)")
+            GimbalLog.log("position read FAILED (attitude GET)")
             return
         }
-        let rawPan = Self.int32LE(bytes, 0)
-        let rawTilt = Self.int32LE(bytes, 4)
-        NSLog("[ObsbotPTZ] raw position arcsec pan=%d tilt=%d", rawPan, rawTilt)
-        GimbalLog.log("raw position arcsec pan=\(rawPan) tilt=\(rawTilt) → user pan=\(Double(-rawPan) / 3600.0) tilt=\(Double(rawTilt) / 3600.0)")
-        currentPan = Double(-rawPan) / 3600.0 // flip: user + = right
-        currentTilt = Double(rawTilt) / 3600.0 // user + = up matches UVC
+        NSLog("[ObsbotPTZ] encoders roll=%.2f pitch=%.2f pan=%.2f", pose.roll, pose.pitch, pose.pan)
+        GimbalLog.log("encoders roll=\(pose.roll) pitch=\(pose.pitch) pan=\(pose.pan) → user pan=\(-pose.pan) tilt=\(-pose.pitch)")
+        currentPan = -pose.pan // wire pan + = left; user + = right
+        currentTilt = -pose.pitch // wire pitch + = down; user + = up
+        if connectBaseline == nil {
+            connectBaseline = (pan: currentPan, tilt: currentTilt)
+            GimbalLog.log("roam baseline set user(pan=\(currentPan),tilt=\(currentTilt))")
+        }
         lastError = nil
     }
 
-    /// Read the device's pan/tilt travel limits (user frame) and store them.
-    /// Falls back silently to the built-in defaults if unsupported.
+    /// Travel limits. The Tiny 3 Lite exposes no UVC pan/tilt control
+    /// (proven by USB descriptor dump), so there is nothing to discover —
+    /// keep the built-in defaults, which match observed travel (pan end-stop
+    /// seen at ≈ +144° wire).
     private func discoverUSBRanges() {
-        // GET_MIN / GET_MAX on CT_PANTILT_ABSOLUTE (8 bytes each:
-        // pan Int32 + tilt Int32, LE, units 1/3600° = arcseconds).
-        let unit = ObsbotV3Protocol.ctUnit
-        let selector = ObsbotV3Protocol.ctPanTiltAbsolute
-        guard let minBytes = usb.read(length: 8, selector: selector, unit: unit, bRequest: 0x82),
-              let maxBytes = usb.read(length: 8, selector: selector, unit: unit, bRequest: 0x83),
-              minBytes.count == 8, maxBytes.count == 8
-        else {
-            NSLog("[ObsbotPTZ] range discovery GET_MIN/GET_MAX failed; using defaults pan [%.1f, %.1f] tilt [%.1f, %.1f]",
-                  panRange.lowerBound, panRange.upperBound, tiltRange.lowerBound, tiltRange.upperBound)
-            GimbalLog.log("range discovery GET_MIN/GET_MAX FAILED; using defaults pan [\(panRange.lowerBound), \(panRange.upperBound)] tilt [\(tiltRange.lowerBound), \(tiltRange.upperBound)]")
-            return
-        }
-
-        let rawMinPan = Self.int32LE(minBytes, 0), rawMinTilt = Self.int32LE(minBytes, 4)
-        let rawMaxPan = Self.int32LE(maxBytes, 0), rawMaxTilt = Self.int32LE(maxBytes, 4)
-        NSLog("[ObsbotPTZ] raw range arcsec min(pan=%d,tilt=%d) max(pan=%d,tilt=%d)", rawMinPan, rawMinTilt, rawMaxPan, rawMaxTilt)
-
-        // UVC frame: pan + = left. Convert to user frame (pan + = right) by
-        // negating, which also swaps min/max. Tilt already shares + = up.
-        let userMinPan = Double(-rawMaxPan) / 3600.0
-        let userMaxPan = Double(-rawMinPan) / 3600.0
-        let userMinTilt = Double(rawMinTilt) / 3600.0
-        let userMaxTilt = Double(rawMaxTilt) / 3600.0
-
-        if userMinPan < userMaxPan { panRange = userMinPan...userMaxPan }
-        if userMinTilt < userMaxTilt { tiltRange = userMinTilt...userMaxTilt }
-
-        NSLog("[ObsbotPTZ] user ranges pan [%.1f, %.1f] tilt [%.1f, %.1f]",
+        NSLog("[ObsbotPTZ] using built-in ranges pan [%.1f, %.1f] tilt [%.1f, %.1f] (no UVC pan/tilt control on this model)",
               panRange.lowerBound, panRange.upperBound, tiltRange.lowerBound, tiltRange.upperBound)
-        GimbalLog.log("user ranges pan [\(panRange.lowerBound), \(panRange.upperBound)] tilt [\(tiltRange.lowerBound), \(tiltRange.upperBound)]")
+        GimbalLog.log("using built-in ranges pan [\(panRange.lowerBound), \(panRange.upperBound)] tilt [\(tiltRange.lowerBound), \(tiltRange.upperBound)]")
     }
 
     // MARK: - OSC helpers
@@ -564,6 +795,15 @@ final class ObsbotPTZController {
     /// Parse the vendor/product ID pair out of an AVCaptureDevice uniqueID.
     /// macOS external-camera uniqueIDs embed the USB IDs, e.g.
     /// "0x35640xFF04_538067968" or a location-based suffix containing them.
+    /// Parse the USB location ID out of an AVCaptureDevice uniqueID
+    /// ("0x201300003564ff04" → 0x20130000: leading 8 hex digits).
+    static func locationID(fromCaptureUniqueID uniqueID: String?) -> UInt32? {
+        guard var hex = uniqueID?.uppercased(), hex.hasPrefix("0X") else { return nil }
+        hex.removeFirst(2)
+        guard hex.count >= 8 else { return nil }
+        return UInt32(hex.prefix(8), radix: 16)
+    }
+
     static func productID(fromCaptureUniqueID uniqueID: String?) -> UInt16? {
         guard let uniqueID else { return nil }
         // Look for a 8-hex-digit VID+PID run and take its low 16 bits.

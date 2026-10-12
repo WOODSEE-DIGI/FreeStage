@@ -14,6 +14,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// @return Device name on success, nil on failure.
 - (nullable NSString *)connectWithProductIDs:(NSArray<NSNumber *> *)productIDs NS_SWIFT_NAME(connect(withProductIDs:));
 
+/// Open the attached OBSBOT device matching the supplied PIDs, preferring the
+/// one at the given USB location ID (0 = any). Required when several identical
+/// cameras are attached: same VID/PID, different locations.
+/// @param productIDs Array of NSNumber(UInt16) product IDs to try.
+/// @param locationID USB location ID (e.g. 0x20130000), or 0 for first match.
+/// @return Device name on success, nil on failure.
+- (nullable NSString *)connectWithProductIDs:(NSArray<NSNumber *> *)productIDs locationID:(UInt32)locationID NS_SWIFT_NAME(connect(withProductIDs:locationID:));
+
 /// Close the device handle.
 - (void)disconnect;
 

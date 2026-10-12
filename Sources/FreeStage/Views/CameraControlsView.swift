@@ -32,6 +32,8 @@ struct CameraAdjustmentsEditor: View {
     @Environment(\.cameraControlService) private var cameraControlService
     @State private var presetName = ""
     @State private var transportSelection: ObsbotPTZController.Transport = .usb
+    /// Currently held jog-pad arrow (drives the pressed accent).
+    @State private var pressedArrow: String? = nil
 
     private var layer: Layer? { store.selectedLayer }
     private var transform: ItemTransform { layer?.transform ?? .identity }
@@ -134,6 +136,7 @@ struct CameraAdjustmentsEditor: View {
             }
 
             if service.ptz.isConnected {
+                gimbalPad(service)
                 gimbalSliders(service)
 
                 HStack(spacing: 8) {
@@ -209,6 +212,63 @@ struct CameraAdjustmentsEditor: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Direction pad (manual jog; needs no position reads)
+
+    /// Ecamm-style jog pad: press-and-hold an arrow to drive the head at the
+    /// jog speed, release to stop. Speeds are wire frame (pitch + = down,
+    /// pan + = left), converted here from the arrows.
+    @ViewBuilder
+    private func gimbalPad(_ service: CameraControlService) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Color.clear.frame(width: 44, height: 34)
+                padButton("▲", id: "up", pitchWire: -1, panWire: 0, service: service)
+                    .accessibilityLabel("Tilt up")
+                Color.clear.frame(width: 44, height: 34)
+            }
+            HStack(spacing: 6) {
+                padButton("◀", id: "left", pitchWire: 0, panWire: 1, service: service)
+                    .accessibilityLabel("Pan left")
+                Button("■") { service.ptz.nudgeStop() }
+                    .frame(width: 44, height: 34)
+                    .accessibilityLabel("Stop")
+                padButton("▶", id: "right", pitchWire: 0, panWire: -1, service: service)
+                    .accessibilityLabel("Pan right")
+            }
+            HStack(spacing: 6) {
+                Color.clear.frame(width: 44, height: 34)
+                padButton("▼", id: "down", pitchWire: 1, panWire: 0, service: service)
+                    .accessibilityLabel("Tilt down")
+                Color.clear.frame(width: 44, height: 34)
+            }
+            cameraSlider("Jog °/s", value: service.ptz.nudgeSpeed, range: 5...60) {
+                service.ptz.nudgeSpeed = $0
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func padButton(_ title: String, id: String, pitchWire: Double, panWire: Double, service: CameraControlService) -> some View {
+        Text(title)
+            .font(.title2)
+            .foregroundStyle(pressedArrow == id ? .white : .primary)
+            .frame(width: 44, height: 34)
+            .background(pressedArrow == id ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary))
+            .clipShape(.rect(cornerRadius: 8))
+            .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+                if pressing {
+                    pressedArrow = id
+                    service.ptz.nudgeStart(
+                        pitchWire: pitchWire * service.ptz.nudgeSpeed,
+                        panWire: panWire * service.ptz.nudgeSpeed
+                    )
+                } else {
+                    if pressedArrow == id { pressedArrow = nil }
+                    service.ptz.nudgeStop()
+                }
+            }, perform: {})
     }
 
     @ViewBuilder
