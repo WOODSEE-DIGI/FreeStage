@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>FreeStage</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>FreeStage Show</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.woodseedigi.freestage.show</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.woodseedigi.FreeStage</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSApplicationRequiresARC</key>
+	<true/>
+	<key>NSCameraReactionIndicatorEnabled</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>FreeStage needs camera access to use webcams and capture devices in scenes.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMainStoryboardFile</key>
+	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>FreeStage needs microphone access to capture audio for recording and streaming.</string>
+	<key>UILaunchStoryboardName</key>
+	<string></string>
+</dict>
+</plist>

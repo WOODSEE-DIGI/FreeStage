@@ -1,0 +1,84 @@
+name: FreeStage
+targets:
+  FreeStageTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - FreeStageTests
+    dependencies:
+      - target: FreeStage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.woodseedigi.FreeStageTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+  FreeStage:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - Sources/FreeStage
+    resources:
+      - Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.woodseedigi.FreeStage
+        GENERATE_INFOPLIST_FILE: YES
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/FreeStage/FreeStage-Bridging-Header.h
+        OTHER_SWIFT_FLAGS:
+          - -warnings-as-errors
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGNING_REQUIRED: NO
+          CODE_SIGNING_ALLOWED: NO
+        Release:
+          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGNING_REQUIRED: NO
+          CODE_SIGNING_ALLOWED: NO
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: FreeStage
+        CFBundleIdentifier: com.woodseedigi.FreeStage
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "14.0"
+        NSCameraUsageDescription: FreeStage needs camera access to use webcams and capture devices in scenes.
+        NSMicrophoneUsageDescription: FreeStage needs microphone access to capture audio for recording and streaming.
+        NSCameraReactionIndicatorEnabled: false
+        NSMainStoryboardFile: ""
+        UILaunchStoryboardName: ""
+        NSApplicationRequiresARC: true
+        NSHighResolutionCapable: true
+        LSApplicationCategoryType: public.app-category.video
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: FreeStage Show
+            CFBundleTypeRole: Editor
+            LSItemContentTypes:
+              - com.woodseedigi.freestage.show
+    preBuildScripts:
+      - name: SwiftLint placeholder
+        script: |
+          echo "SwiftLint placeholder"
+        basedOnDependencyAnalysis: false
+schemes:
+  FreeStage:
+    build:
+      targets:
+        FreeStage: all
+    run:
+      config: Debug
+      disableMainThreadChecker: false
+    test:
+      config: Debug
+      targets:
+        - FreeStageTests
+    archive:
+      config: Release

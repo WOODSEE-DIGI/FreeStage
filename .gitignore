@@ -1,0 +1,10 @@
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+build/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
