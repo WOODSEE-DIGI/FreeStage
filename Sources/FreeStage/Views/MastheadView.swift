@@ -54,29 +54,30 @@ struct MastheadView: View {
                     isAddingScreen = true
                 }
                 toolbarButton("Color", systemImage: "paintpalette.fill") {
-                    addLayer(source: .color(.green), name: "Color")
+                    addCue(source: .color(.green), name: "Color")
                 }
                 toolbarButton("Text", systemImage: "textformat") {
-                    addLayer(source: .text(TextSource()), name: "Text")
+                    addCue(source: .text(TextSource()), name: "Text")
                 }
                 toolbarButton("Image", systemImage: "photo") {
                     // Placeholder for file picker layer.
-                    addLayer(source: .color(.black), name: "Image")
+                    addCue(source: .color(.black), name: "Image")
                 }
                 toolbarButton("Slideshow", systemImage: "photo.stack") {
                     isAddingSlideshow = true
                 }
                 toolbarButton("Draw", systemImage: "pencil.tip") {
-                    addDrawingLayer()
+                    addDrawingCue()
                 }
                 toolbarButton("Group", systemImage: "folder.fill") {
-                    store.addGroupCue()
+                    let cueID = store.addGroupCue()
+                    store.selectCue(id: cueID)
                 }
                 toolbarButton("Wait", systemImage: "clock") {
-                    addLayer(source: .color(.black), name: "Wait")
+                    addCue(source: .color(.black), name: "Wait")
                 }
                 toolbarButton("Memo", systemImage: "note.text") {
-                    addLayer(source: .color(.black), name: "Memo")
+                    addCue(source: .color(.black), name: "Memo")
                 }
 
                 Spacer()
@@ -87,21 +88,24 @@ struct MastheadView: View {
         .background(.ultraThinMaterial)
         .sheet(isPresented: $isAddingCamera) {
             CameraPickerSheet { device in
-                addLayer(source: .camera(deviceID: device.uniqueID), name: device.name)
+                let cueID = store.addCue(source: .camera(deviceID: device.uniqueID), name: device.name)
+                store.selectCue(id: cueID)
                 captureManager?.startCapture(uniqueID: device.uniqueID)
             }
         }
         .sheet(isPresented: $isAddingScreen) {
             if let screenCaptureManager {
                 ScreenPickerSheet { display in
-                    addLayer(source: .screen(displayID: display.displayID), name: "Screen \(display.displayID)")
+                    let cueID = store.addCue(source: .screen(displayID: display.displayID), name: "Screen \(display.displayID)")
+                    store.selectCue(id: cueID)
                     screenCaptureManager.startCapture(displayID: display.displayID)
                 }
             }
         }
         .sheet(isPresented: $isAddingSlideshow) {
             SlideshowPickerSheet { slideshow in
-                addLayer(source: .slideshow(slideshow), name: "Slideshow")
+                let cueID = store.addCue(source: .slideshow(slideshow), name: "Slideshow")
+                store.selectCue(id: cueID)
             }
         }
     }
@@ -292,7 +296,6 @@ struct MastheadView: View {
             .frame(width: 56, height: 44)
         }
         .buttonStyle(.borderless)
-        .disabled(store.activeScene == nil)
     }
 
     private var goBackground: Color {
@@ -309,20 +312,13 @@ struct MastheadView: View {
         return recordingService?.isRecording == true ? .red : .orange
     }
 
-    private func addLayer(source: Source, name: String) {
-        guard let scene = store.activeScene,
-              let sceneIndex = store.show.scenes.firstIndex(where: { $0.id == scene.id }) else {
-            // No active scene: fall back to quick-create behavior.
-            store.addCue(source: source, name: name)
-            return
-        }
-        let layer = Layer(name: name, source: source)
-        store.show.scenes[sceneIndex].layers.append(layer)
-        store.selectLayer(id: layer.id)
+    private func addCue(source: Source, name: String) {
+        let cueID = store.addCue(source: source, name: name)
+        store.selectCue(id: cueID)
     }
 
-    private func addDrawingLayer() {
-        let drawing = DrawingSource()
-        addLayer(source: .drawing(drawing), name: "Drawing")
+    private func addDrawingCue() {
+        let cueID = store.addCue(source: .drawing(DrawingSource()), name: "Drawing")
+        store.selectCue(id: cueID)
     }
 }
