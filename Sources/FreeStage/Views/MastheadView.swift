@@ -10,21 +10,37 @@ import SwiftUI
 struct MastheadView: View {
     @Environment(ShowStore.self) private var store
     @Environment(\.cameraCaptureManager) private var captureManager
+    @Environment(\.screenCaptureManager) private var screenCaptureManager
+    @Environment(\.recordingService) private var recordingService
+    @Environment(\.virtualCameraOutputService) private var virtualCamera
+    @Environment(\.appSettings) private var appSettings
     @State private var isAddingCamera = false
+    @State private var isAddingScreen = false
+    @State private var isAddingSlideshow = false
 
     var body: some View {
         @Bindable var store = store
 
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                goButton
-                    .frame(width: 80, height: 80)
-
                 VStack(alignment: .leading, spacing: 4) {
-                    activeCueDisplay
+                    HStack(spacing: 8) {
+                        activeCueDisplay
+                        if isRecording {
+                            recordingIndicator
+                        }
+                    }
                     notesField
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isRecording {
+                    stopShowButton
+                        .frame(width: 80, height: 80)
+                }
+
+                goButton
+                    .frame(width: 80, height: 80)
             }
             .padding()
 
@@ -34,24 +50,33 @@ struct MastheadView: View {
                 toolbarButton("Camera", systemImage: "video.fill") {
                     isAddingCamera = true
                 }
+                toolbarButton("Screen", systemImage: "display") {
+                    isAddingScreen = true
+                }
                 toolbarButton("Color", systemImage: "paintpalette.fill") {
-                    store.addCue(source: .color(.green))
+                    addLayer(source: .color(.green), name: "Color")
                 }
                 toolbarButton("Text", systemImage: "textformat") {
-                    store.addCue(source: .text(TextSource()))
+                    addLayer(source: .text(TextSource()), name: "Text")
                 }
                 toolbarButton("Image", systemImage: "photo") {
-                    // Placeholder for file picker cue.
-                    store.addCue(source: .color(.black))
+                    // Placeholder for file picker layer.
+                    addLayer(source: .color(.black), name: "Image")
+                }
+                toolbarButton("Slideshow", systemImage: "photo.stack") {
+                    isAddingSlideshow = true
+                }
+                toolbarButton("Draw", systemImage: "pencil.tip") {
+                    addDrawingLayer()
                 }
                 toolbarButton("Group", systemImage: "folder.fill") {
                     store.addGroupCue()
                 }
                 toolbarButton("Wait", systemImage: "clock") {
-                    store.addCue(source: .color(.black))
+                    addLayer(source: .color(.black), name: "Wait")
                 }
                 toolbarButton("Memo", systemImage: "note.text") {
-                    store.addCue(source: .color(.black))
+                    addLayer(source: .color(.black), name: "Memo")
                 }
 
                 Spacer()
@@ -62,16 +87,28 @@ struct MastheadView: View {
         .background(.ultraThinMaterial)
         .sheet(isPresented: $isAddingCamera) {
             CameraPickerSheet { device in
-                let cueID = store.addCue(source: .camera(deviceID: device.uniqueID), name: device.name)
+                addLayer(source: .camera(deviceID: device.uniqueID), name: device.name)
                 captureManager?.startCapture(uniqueID: device.uniqueID)
-                store.selectCue(id: cueID)
+            }
+        }
+        .sheet(isPresented: $isAddingScreen) {
+            if let screenCaptureManager {
+                ScreenPickerSheet { display in
+                    addLayer(source: .screen(displayID: display.displayID), name: "Screen \(display.displayID)")
+                    screenCaptureManager.startCapture(displayID: display.displayID)
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingSlideshow) {
+            SlideshowPickerSheet { slideshow in
+                addLayer(source: .slideshow(slideshow), name: "Slideshow")
             }
         }
     }
 
     private var goButton: some View {
         Button {
-            store.go()
+            performGo()
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
@@ -80,14 +117,134 @@ struct MastheadView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(goBorder, lineWidth: 3)
                     )
-                Text("GO")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                VStack(spacing: 2) {
+                    Text("GO")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    if isRecordingInShowMode {
+                        Text("REC")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                    }
+                }
             }
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.space, modifiers: [])
         .disabled(store.activeCue?.isArmed != true)
+        .contextMenu {
+            if let activeCue = store.activeCue {
+                Button("Fire Cue Directly") {
+                    store.triggerCue(id: activeCue.id)
+                }
+            }
+        }
+    }
+
+    private func performGo() {
+        if !store.isEditMode {
+            // Show mode: arm outputs before the cue fires.
+            if appSettings?.startVirtualCameraOnShowMode == true,
+               let virtualCamera, !virtualCamera.isExtensionActive {
+                virtualCamera.activate()
+            }
+            if appSettings?.recordOnGo == true,
+               let recordingService, !recordingService.isRecording {
+                do {
+                    let url = try recordingService.startRecording()
+                    print("[FreeStage] Show mode recording started: \(url.path)")
+                } catch {
+                    print("[FreeStage] Failed to start show recording: \(error)")
+                }
+            }
+        }
+
+        let result = store.go()
+
+        if !store.isEditMode,
+           case .atEnd = result,
+           appSettings?.autoStopRecordingOnShowEnd == true,
+           let recordingService, recordingService.isRecording {
+            Task {
+                do {
+                    if let url = try await recordingService.stopRecording() {
+                        NSSound.beep()
+                        print("[FreeStage] Show ended; recording saved: \(url.path)")
+                    }
+                } catch {
+                    print("[FreeStage] Failed to stop show recording: \(error)")
+                }
+            }
+        }
+    }
+
+    private var isRecordingInShowMode: Bool {
+        !store.isEditMode && recordingService?.isRecording == true
+    }
+
+    private var isRecording: Bool {
+        recordingService?.isRecording == true
+    }
+
+    private var stopShowButton: some View {
+        Button {
+            stopShow()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.red.opacity(0.25))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.red, lineWidth: 3)
+                    )
+                VStack(spacing: 2) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(.primary)
+                    Text("STOP")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.escape, modifiers: [])
+        .help("Stop recording and end the show")
+    }
+
+    private var recordingIndicator: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+            Text("REC")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.red)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.red.opacity(0.15))
+        .clipShape(Capsule())
+    }
+
+    private func stopShow() {
+        store.stopShow()
+        if let recordingService, recordingService.isRecording {
+            Task {
+                do {
+                    if let url = try await recordingService.stopRecording() {
+                        NSSound.beep()
+                        print("[FreeStage] Show stopped; recording saved: \(url.path)")
+                    }
+                } catch {
+                    print("[FreeStage] Failed to stop recording: \(error)")
+                }
+            }
+        }
     }
 
     private var activeCueDisplay: some View {
@@ -139,10 +296,33 @@ struct MastheadView: View {
     }
 
     private var goBackground: Color {
-        store.activeCue?.isArmed == true ? Color.green.opacity(0.25) : Color.gray.opacity(0.15)
+        if store.isEditMode {
+            return store.activeCue?.isArmed == true ? Color.green.opacity(0.25) : Color.gray.opacity(0.15)
+        }
+        return recordingService?.isRecording == true ? Color.red.opacity(0.35) : Color.orange.opacity(0.25)
     }
 
     private var goBorder: Color {
-        store.activeCue?.isArmed == true ? .green : .red
+        if store.isEditMode {
+            return store.activeCue?.isArmed == true ? .green : .red
+        }
+        return recordingService?.isRecording == true ? .red : .orange
+    }
+
+    private func addLayer(source: Source, name: String) {
+        guard let scene = store.activeScene,
+              let sceneIndex = store.show.scenes.firstIndex(where: { $0.id == scene.id }) else {
+            // No active scene: fall back to quick-create behavior.
+            store.addCue(source: source, name: name)
+            return
+        }
+        let layer = Layer(name: name, source: source)
+        store.show.scenes[sceneIndex].layers.append(layer)
+        store.selectLayer(id: layer.id)
+    }
+
+    private func addDrawingLayer() {
+        let drawing = DrawingSource()
+        addLayer(source: .drawing(drawing), name: "Drawing")
     }
 }

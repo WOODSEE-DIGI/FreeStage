@@ -238,17 +238,23 @@ struct InspectorView: View {
         VStack(spacing: 0) {
             layerList
 
-            if store.selectedLayer != nil {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        if let layer = store.selectedLayer {
-                            layerControls(layer: layer)
+                if store.selectedLayer != nil {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            if let layer = store.selectedLayer {
+                                layerControls(layer: layer)
+                            }
+                            if store.selectedLayerSlideshow != nil {
+                                SlideshowControlsView()
+                            }
+                            if store.selectedLayerDrawing != nil {
+                                DrawingControlsView()
+                            }
+                            FilterEditorView()
+                            CameraControlsView()
                         }
-                        FilterEditorView()
-                        CameraControlsView()
                     }
                 }
-            }
         }
     }
 
@@ -313,11 +319,11 @@ struct InspectorView: View {
                     .toggleStyle(.checkbox)
                 }
 
-                controlRow("X", value: layer.transform.x, range: 0...1) { newValue in store.updateSelectedLayer { $0.transform.x = newValue } }
-                controlRow("Y", value: layer.transform.y, range: 0...1) { newValue in store.updateSelectedLayer { $0.transform.y = newValue } }
-                controlRow("Width", value: layer.transform.scaleX, range: 0.01...2.0) { newValue in store.updateSelectedLayer { $0.transform.scaleX = newValue } }
-                controlRow("Height", value: layer.transform.scaleY, range: 0.01...2.0) { newValue in store.updateSelectedLayer { $0.transform.scaleY = newValue } }
-                controlRow("Opacity", value: layer.opacity, range: 0...1) { newValue in store.updateSelectedLayer { $0.opacity = newValue } }
+                AdjustmentSlider("X", value: layer.transform.x, range: 0...1, defaultValue: 0.5) { newValue in store.updateSelectedLayer { $0.transform.x = newValue } }
+                AdjustmentSlider("Y", value: layer.transform.y, range: 0...1, defaultValue: 0.5) { newValue in store.updateSelectedLayer { $0.transform.y = newValue } }
+                AdjustmentSlider("Width", value: layer.transform.scaleX, range: 0.01...2.0, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.transform.scaleX = newValue } }
+                AdjustmentSlider("Height", value: layer.transform.scaleY, range: 0.01...2.0, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.transform.scaleY = newValue } }
+                AdjustmentSlider("Opacity", value: layer.opacity, range: 0...1, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.opacity = newValue } }
 
                 if case .camera = layer.source {
                     cameraPicker(layer: layer)
@@ -326,16 +332,14 @@ struct InspectorView: View {
                 Divider()
 
                 Toggle("Chroma Key", isOn: Binding(
-                    get: { store.selectedLayerChromaKey != nil },
+                    get: { store.selectedLayerChromaKey?.isEnabled ?? false },
                     set: { store.setSelectedLayerChromaKeyEnabled($0) }
                 ))
                 .toggleStyle(.switch)
                 .controlSize(.small)
 
-                if store.selectedLayerChromaKey != nil {
-                    ChromaKeyControlsView()
-                        .padding(.top, 4)
-                }
+                ChromaKeyControlsView()
+                    .padding(.top, 4)
 
                 Divider()
 
@@ -376,25 +380,6 @@ struct InspectorView: View {
             }
         }
         .padding()
-    }
-
-    private func controlRow(
-        _ label: String,
-        value: Double,
-        range: ClosedRange<Double>,
-        onChange: @escaping (Double) -> Void
-    ) -> some View {
-        HStack {
-            Text(label)
-                .frame(width: 50, alignment: .leading)
-            Slider(value: Binding(
-                get: { value },
-                set: { onChange($0) }
-            ), in: range)
-            Text("\(value, specifier: "%.2f")")
-                .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
-        }
     }
 
     private func cameraPicker(layer: Layer) -> some View {

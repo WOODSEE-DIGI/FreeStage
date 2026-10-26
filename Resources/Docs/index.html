@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FreeStage Help</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>FreeStage Help</h1>
+            <p>A live production switcher for macOS. Build scenes, fire cues, mix audio, and stream or record your show.</p>
+        </header>
+    </div>
+
+    <nav>
+        <ul>
+            <li><a href="#workspace">Workspace</a></li>
+            <li><a href="#modes">Edit & Show</a></li>
+            <li><a href="#scenes">Scenes</a></li>
+            <li><a href="#cues">Cues</a></li>
+            <li><a href="#go">GO & STOP</a></li>
+            <li><a href="#recording">Recording</a></li>
+            <li><a href="#streaming">Streaming</a></li>
+            <li><a href="#chroma">Chroma Key</a></li>
+            <li><a href="#slideshow">Slideshows</a></li>
+            <li><a href="#drawing">Drawing</a></li>
+            <li><a href="#shapes">Shapes &amp; Text</a></li>
+            <li><a href="#audio">Audio</a></li>
+            <li><a href="#external">External Control</a></li>
+            <li><a href="#settings">Settings</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <section id="workspace">
+            <h2>Workspace Overview</h2>
+            <p>The FreeStage window is divided into four areas:</p>
+            <ul>
+                <li><strong>Masthead (top):</strong> active cue info on the left, the big GO button on the right, the source toolbar below, and a Stop control that appears while recording.</li>
+                <li><strong>Left pane:</strong> the cue list and the inspector for the selected layer.</li>
+                <li><strong>Center/right:</strong> Program (live output) and Preview monitors.</li>
+                <li><strong>Right sidebar:</strong> Scenes library and Audio mixer.</li>
+                <li><strong>Footer:</strong> Edit/Show mode switch, left inspector toggle, masthead toggle, Panic in the center, and the right sidebar toggle on the far right.</li>
+            </ul>
+            <div class="tip">
+                <p><strong>Tip:</strong> The workspace requires a minimum window size of 1280 × 760. If FreeStage opens smaller than expected, macOS may have restored a previously saved window frame. Resize the window larger or Option-click the green zoom button to reset it.</p>
+            </div>
+        </section>
+
+        <section id="modes">
+            <h2>Edit Mode vs Show Mode</h2>
+            <p>Use the segmented control in the footer to switch modes.</p>
+
+            <h3><span class="mode-badge mode-edit">Edit</span></h3>
+            <ul>
+                <li>Build and arrange your scenes and cues.</li>
+                <li>GO previews the active cue in the Preview monitor without starting recording or streaming.</li>
+                <li>Layers can be added, moved, scaled, and filtered.</li>
+            </ul>
+
+            <h3><span class="mode-badge mode-show">Show</span></h3>
+            <ul>
+                <li>Run your production.</li>
+                <li>GO arms recording/streaming and fires the active cue to the live Program output.</li>
+                <li>The virtual camera can be activated automatically if enabled in Settings.</li>
+            </ul>
+        </section>
+
+        <section id="scenes">
+            <h2>Scenes</h2>
+            <p>A <strong>scene</strong> is a visual composition made of stacked layers. Scenes live in the <strong>Scenes</strong> tab of the right sidebar.</p>
+            <ul>
+                <li>Click <strong>Add</strong> to create a new empty scene.</li>
+                <li>Select a scene, then use the source toolbar (Camera, Screen, Color, Text, Slideshow) to add layers to it.</li>
+                <li>Right-click a scene to <strong>Add Cue for Scene</strong>, <strong>Duplicate Scene</strong>, or <strong>Delete Scene</strong>.</li>
+                <li>Deleting a scene also deletes any cues that reference it.</li>
+            </ul>
+        </section>
+
+        <section id="cues">
+            <h2>Cues</h2>
+            <p>A <strong>cue</strong> points to a scene and advances the live output when fired. Cues are listed in the left-hand cue list.</p>
+            <ul>
+                <li>Select a cue to make it the next cue standing by.</li>
+                <li>Right-click a cue to <strong>Fire Cue</strong> directly, <strong>Select as Next</strong>, or <strong>Duplicate Cue</strong>.</li>
+                <li>Duplicate a cue to reuse the same scene in another place in the rundown.</li>
+                <li>Toggle <strong>Armed</strong> in the inspector to disable a cue. Disarmed cues cannot be fired.</li>
+            </ul>
+        </section>
+
+        <section id="go">
+            <h2>GO & STOP</h2>
+            <p>The GO button lives on the <strong>top right</strong> of the masthead and is the main show control.</p>
+            <ul>
+                <li>In <strong>Edit</strong> mode, GO fires the standing-by cue for preview only.</li>
+                <li>In <strong>Show</strong> mode, the first GO starts recording (if enabled) and fires the cue to Program.</li>
+                <li>Subsequent GO presses advance to the next cue.</li>
+                <li>Press <span class="keyboard">Space</span> as a shortcut for GO.</li>
+            </ul>
+
+            <h3>Stopping the Show</h3>
+            <ul>
+                <li>While recording, a red <span class="mode-badge mode-rec">STOP</span> button appears to the left of GO. Press it to stop recording and end the show.</li>
+                <li>Press <span class="keyboard">Esc</span> as a shortcut for STOP.</li>
+                <li><strong>Panic</strong> in the footer immediately fades live output and stops recording.</li>
+            </ul>
+        </section>
+
+        <section id="recording">
+            <h2>Recording</h2>
+            <p>FreeStage can record the Program video and mixed audio to disk.</p>
+            <ul>
+                <li>Open <strong>Settings</strong> to choose the recording directory, format (H.264 or HEVC), resolution, frame rate, bitrate, auto-split interval, and minimum free-space guard. By default recordings are saved to <code>~/Movies/FreeStage</code>.</li>
+                <li>Enable <strong>Record on GO</strong> to start recording automatically with the first GO in Show mode.</li>
+                <li>Enable <strong>Stop recording at show end</strong> to finish the file after the last cue fires.</li>
+                <li>Use the Output menu or the STOP button to stop recording manually.</li>
+                <li>In the Audio sidebar you can pause, resume, and split a recording. Pausing finalizes the current file; resuming creates a new one.</li>
+                <li>Reveal the last recording from the Output menu.</li>
+            </ul>
+        </section>
+
+        <section id="streaming">
+            <h2>Streaming</h2>
+            <p>FreeStage can stream the Program output and mixed audio to RTMP/RTMPS destinations such as Twitch, YouTube, or Facebook Live.</p>
+            <ul>
+                <li>Open <strong>Settings → Manage Stream Destinations</strong> to add your ingest server URL and stream key.</li>
+                <li>Select Twitch, YouTube, Facebook Live, or a custom RTMP server from the platform dropdown.</li>
+                <li>Use the <strong>Go Live</strong> button in the Audio mixer sidebar to start streaming to an enabled destination.</li>
+                <li>FreeStage displays stream duration and auto-reconnects up to five times if the connection drops.</li>
+                <li>Streaming shares the same Program video and mixed audio that are recorded and sent to the virtual camera.</li>
+            </ul>
+            <div class="tip">
+                <p><strong>Note:</strong> Live streaming requires the <a href="https://github.com/shogo4405/HaishinKit.swift">HaishinKit</a> Swift Package to be added to the FreeStage Xcode project. The build succeeds without it, but streaming remains inactive until the package is linked.</p>
+            </div>
+        </section>
+
+        <section id="slideshow">
+            <h2>Slideshows</h2>
+            <p>A <strong>slideshow</strong> layer cycles through a folder of still images. Use it as a full-layer source or as the background behind a chroma-keyed camera.</p>
+            <ul>
+                <li>Click <strong>Slideshow</strong> in the source toolbar or Scenes sidebar to choose a folder of images.</li>
+                <li>Set the interval (2–60 seconds), transition style (Cut or Dissolve), and whether to shuffle the order.</li>
+                <li>In the layer inspector you can replace the image folder, change the interval, and preview the first images.</li>
+                <li>As a chroma-key background, a slideshow is treated like any other source: the keyed area reveals the current slide.</li>
+            </ul>
+        </section>
+
+        <section id="drawing">
+            <h2>Drawing Layer</h2>
+            <p>The <strong>Draw</strong> source adds an illustration/annotation layer you can paint on directly. Use it for live markup, lower-thirds sketches, or quick overlays.</p>
+            <ul>
+                <li>Click <strong>Draw</strong> in the source toolbar or Scenes sidebar to add a new drawing layer.</li>
+                <li>Select the layer and click <strong>Edit Drawing…</strong> to open the full-screen editor.</li>
+                <li>Choose the Pen or Eraser, pick a color, and set brush width.</li>
+                <li>Undo individual strokes or clear the whole canvas.</li>
+                <li>The drawing is stored as vector-like strokes, so it scales cleanly when you transform the layer.</li>
+                <li>Tablet pressure is captured for pen strokes when a pressure-sensitive input device is used.</li>
+            </ul>
+        </section>
+
+        <section id="shapes">
+            <h2>Shapes &amp; Text</h2>
+            <p>In the drawing editor you can switch from freehand pen to precise shapes and text labels.</p>
+            <ul>
+                <li><strong>Rectangle / Ellipse</strong> — click and drag to define the bounding box.</li>
+                <li><strong>Line / Arrow</strong> — click and drag from start to end; Arrow adds a head at the end point.</li>
+                <li><strong>Text</strong> — select the Text tool and click where you want the label, then type in the prompt. Text size is controlled by the Width slider.</li>
+                <li>All shapes and text use the current color and line width.</li>
+            </ul>
+        </section>
+
+        <section id="chroma">
+            <h2>Chroma Key</h2>
+            <p>FreeStage's chroma keyer supports multi-point sampling and fine spill control for tough green/blue screens.</p>
+            <ul>
+                <li><strong>Enable:</strong> turn on the main Chroma Key switch in the layer inspector. If the green screen stays visible, check that the switch is on and the A/B bypass is off.</li>
+                <li><strong>Key Colors:</strong> add up to four sampled colors to handle highlights and shadows across an uneven screen.</li>
+                <li><strong>A / B Bypass:</strong> toggle the bypass switch to temporarily disable the key and compare against the original source.</li>
+                <li><strong>Edge Despill:</strong> boosts spill suppression exactly where the foreground meets the keyed background.</li>
+                <li><strong>Spill Suppression / Range:</strong> removes green/blue reflection from foreground edges and skin tones.</li>
+                <li><strong>Skin Protect:</strong> preserves warm skin-tone hues while still despilling nearby green.</li>
+                <li><strong>Background:</strong> choose an image or video to composite behind the keyed layer, or leave it transparent.</li>
+            </ul>
+        </section>
+
+        <section id="audio">
+            <h2>Audio Mixer</h2>
+            <p>The Audio tab in the right sidebar controls the live mix.</p>
+            <ul>
+                <li><strong>Output Device:</strong> choose the device FreeStage monitors to. This changes the system default output.</li>
+                <li><strong>Input Device:</strong> choose the microphone or audio interface to capture.</li>
+                <li><strong>Microphone / System Audio:</strong> each channel has volume and Low/Mid/High EQ.</li>
+                <li><strong>Master:</strong> overall output volume.</li>
+                <li><strong>Mute Output:</strong> silence the monitor without affecting the recording.</li>
+            </ul>
+            <div class="tip">
+                <p><strong>Tip:</strong> Start the audio engine before your show. If you change the input device, capture restarts automatically.</p>
+            </div>
+        </section>
+
+        <section id="external">
+            <h2>External Control</h2>
+            <p>FreeStage can receive cues from Stream Deck, Bitfocus Companion, TouchOSC, or any HTTP/OSC client.</p>
+
+            <h3>HTTP Trigger Server</h3>
+            <p>Enable it in Settings → External Control. Default port is <code>17352</code>.</p>
+            <pre><code>curl -X POST http://localhost:17352/cue/&lt;uuid&gt;
+curl http://localhost:17352/cues</code></pre>
+            <p>Right-click any cue and choose <strong>Copy HTTP Trigger URL</strong> to get its exact address.</p>
+
+            <h3>OSC Trigger Server</h3>
+            <p>Enable it in Settings → External Control. Default port is <code>17353</code>.</p>
+            <pre><code>/freestage/cue/&lt;uuid&gt;
+/freestage/cue/number/&lt;number&gt;
+/freestage/cue/go
+/freestage/cue/next
+/freestage/cue/prev</code></pre>
+            <p>Right-click any cue and choose <strong>Copy OSC Trigger Address</strong>.</p>
+        </section>
+
+        <section id="settings">
+            <h2>Settings</h2>
+            <p>Open Settings with <span class="keyboard">Cmd ,</span>. Open the bundled help from the Help menu or with <span class="keyboard">Cmd ?</span>.</p>
+            <ul>
+                <li><strong>Recording:</strong> directory, format, bitrate.</li>
+                <li><strong>Show Mode:</strong> Record on GO, auto-stop, virtual camera activation.</li>
+                <li><strong>Streaming:</strong> manage RTMP destinations and enable the HaishinKit backend.</li>
+                <li><strong>External Control:</strong> HTTP/OSC trigger servers, ports, and localhost-only security.</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>FreeStage documentation. For issues and updates, check the project repository.</p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -16,6 +16,7 @@ final class ShowStore: NSObject {
     var activeCueID: UUID?
     var liveCueID: UUID?
     var selectedLayerID: UUID?
+    var selectedSceneID: UUID?
     var isPlaying = false
 
     // MARK: - Workspace UI state
@@ -40,7 +41,12 @@ final class ShowStore: NSObject {
         return show.cues.first { $0.id == activeCueID }
     }
 
+    /// The scene currently being edited. The explicitly selected scene takes
+    /// precedence; otherwise it is derived from the active cue.
     var activeScene: Scene? {
+        if let selectedSceneID {
+            return show.scene(withID: selectedSceneID)
+        }
         guard let cue = activeCue else { return nil }
         return show.scene(withID: cue.sceneID)
     }
@@ -59,21 +65,76 @@ final class ShowStore: NSObject {
 
     func selectCue(id: UUID?) {
         activeCueID = id
+        selectedSceneID = nil
     }
 
-    func go() {
+    enum GoResult: Sendable {
+        case advanced(nextCue: Cue?)
+        case atEnd
+        case noCue
+        case disarmed
+    }
+
+    /// Advance the live cue to the active cue, then move the playhead forward.
+    /// Returns information about where the show landed.
+    @discardableResult
+    func go() -> GoResult {
         guard let activeCueID,
-              let cue = show.cues.first(where: { $0.id == activeCueID }),
-              cue.isArmed else { return }
+              let cue = show.cues.first(where: { $0.id == activeCueID }) else {
+            return .noCue
+        }
+        guard cue.isArmed else { return .disarmed }
 
         stopCameraMove()
         liveCueID = activeCueID
         selectedLayerID = nil
+        selectedSceneID = nil
         startCameraMoveIfNeeded(for: cue)
 
         guard let index = show.cues.firstIndex(where: { $0.id == activeCueID }),
-              index + 1 < show.cues.count else { return }
+              index + 1 < show.cues.count else {
+            return .atEnd
+        }
         self.activeCueID = show.cues[index + 1].id
+        return .advanced(nextCue: self.activeCue)
+    }
+
+    /// Fire a specific cue by ID, regardless of the current playhead order.
+    /// This is used for free-form triggering (e.g., Stream Deck or manual jump).
+    func triggerCue(id: UUID) {
+        guard let cue = show.cues.first(where: { $0.id == id }) else { return }
+        guard cue.isArmed else { return }
+
+        stopCameraMove()
+        activeCueID = id
+        liveCueID = id
+        selectedLayerID = nil
+        selectedSceneID = nil
+        startCameraMoveIfNeeded(for: cue)
+    }
+
+    /// Create a new cue that references the same scene as an existing cue.
+    /// This lets the same visual scene be triggered from multiple places.
+    @discardableResult
+    func duplicateCue(id: UUID) -> UUID? {
+        guard let cue = show.cues.first(where: { $0.id == id }) else { return nil }
+        let duplicate = Cue(
+            name: cue.name + " Copy",
+            sceneID: cue.sceneID,
+            transition: cue.transition,
+            duration: cue.duration,
+            preWait: cue.preWait,
+            postWait: cue.postWait,
+            continueMode: cue.continueMode,
+            isArmed: cue.isArmed,
+            isFlagged: cue.isFlagged,
+            notes: cue.notes,
+            targetID: cue.targetID,
+            color: cue.color,
+            cameraMove: cue.cameraMove
+        )
+        show.cues.append(duplicate)
+        return duplicate.id
     }
 
     func selectPrevious() {
@@ -98,7 +159,18 @@ final class ShowStore: NSObject {
         activeCueID = firstCueID
         liveCueID = firstCueID
         selectedLayerID = nil
+        selectedSceneID = nil
         isPlaying = false
+    }
+
+    /// End the show: stop playback and return to the first cue.
+    func stopShow() {
+        stopCameraMove()
+        isPlaying = false
+        let firstCueID = show.cues.first?.id
+        activeCueID = firstCueID
+        selectedLayerID = nil
+        selectedSceneID = nil
     }
 
     func panic() {
@@ -147,8 +219,43 @@ final class ShowStore: NSObject {
         }
     }
 
-    // MARK: - Cue / scene creation
+    // MARK: - Scene creation
 
+    /// Create a standalone scene and return its ID. Does not create a cue.
+    @discardableResult
+    func createScene(name: String, layers: [Layer] = []) -> UUID {
+        let scene = Scene(name: name, layers: layers)
+        show.scenes.append(scene)
+        return scene.id
+    }
+
+    /// Delete a scene and any cues that reference it.
+    func deleteScene(id: UUID) {
+        show.scenes.removeAll { $0.id == id }
+        show.cues.removeAll { $0.sceneID == id }
+        if liveCue?.sceneID == id { liveCueID = nil }
+        if activeCue?.sceneID == id { activeCueID = show.cues.first?.id }
+        if selectedLayer?.id != nil && activeScene?.id == id { selectedLayerID = nil }
+    }
+
+    /// Rename a scene.
+    func renameScene(id: UUID, to name: String) {
+        guard let index = show.scenes.firstIndex(where: { $0.id == id }) else { return }
+        show.scenes[index].name = name
+    }
+
+    // MARK: - Cue creation
+
+    /// Create a cue that references an existing scene.
+    @discardableResult
+    func addCue(for sceneID: UUID, name: String? = nil, transition: Transition = .cut) -> UUID {
+        guard let scene = show.scene(withID: sceneID) else { return sceneID }
+        let cue = Cue(name: name ?? scene.name, sceneID: sceneID, transition: transition)
+        show.cues.append(cue)
+        return cue.id
+    }
+
+    /// Quick-create a scene with a single source layer and a cue that points to it.
     @discardableResult
     func addCue(source: Source, name: String? = nil) -> UUID {
         let layer = Layer(name: name, source: source)
@@ -298,19 +405,26 @@ final class ShowStore: NSObject {
         return nil
     }
 
-    /// Turn the selected layer's chroma key on or off. When turning on, a
-    /// default chroma-key filter is added if the layer doesn't already have one.
+    /// Turn the selected layer's chroma key on or off. The filter is kept on
+    /// the layer (with `isEnabled` toggled) so the controls stay visible and
+    /// settings are preserved when the user disables/enables the effect.
     func setSelectedLayerChromaKeyEnabled(_ enabled: Bool) {
-        guard let layer = selectedLayer else { return }
-        if enabled {
-            guard selectedLayerChromaKey == nil else { return }
-            addFilterToSelectedLayer(.chromaKey(ChromaKeyFilter()))
-        } else if let existing = layer.filters.first(where: {
-            if case .chromaKey = $0 { return true }
-            return false
-        }) {
-            removeFilterFromSelectedLayer(id: existing.id)
+        guard selectedLayer != nil else { return }
+        if let existing = selectedLayerChromaKey {
+            updateChromaKeyFilter(id: Filter.chromaKey(existing).id) { $0.isEnabled = enabled }
+        } else {
+            addFilterToSelectedLayer(.chromaKey(ChromaKeyFilter(isEnabled: enabled)))
         }
+    }
+
+    /// Ensure the selected camera layer has a chroma-key filter. If one does
+    /// not exist, a disabled default filter is added so the inspector controls
+    /// can remain visible and editable without immediately keying the source.
+    func ensureSelectedLayerChromaKeyFilter() {
+        guard let layer = selectedLayer,
+              case .camera = layer.source,
+              selectedLayerChromaKey == nil else { return }
+        addFilterToSelectedLayer(.chromaKey(ChromaKeyFilter(isEnabled: false)))
     }
 
     /// Mutate the selected layer's chroma-key filter (no-op if none is present).
@@ -372,6 +486,20 @@ final class ShowStore: NSObject {
             if case .colorCorrection(let cc) = filter { return cc }
         }
         return nil
+    }
+
+    /// The slideshow configuration if the selected layer is a slideshow source.
+    var selectedLayerSlideshow: SlideshowSource? {
+        guard let layer = selectedLayer,
+              case .slideshow(let slideshow) = layer.source else { return nil }
+        return slideshow
+    }
+
+    /// The drawing configuration if the selected layer is a drawing source.
+    var selectedLayerDrawing: DrawingSource? {
+        guard let layer = selectedLayer,
+              case .drawing(let drawing) = layer.source else { return nil }
+        return drawing
     }
 
     private func ensureSelectedLayerColorCorrection() -> String {

@@ -21,14 +21,19 @@ protocol SourceRenderer: Sendable {
 }
 
 /// Registry that selects the right renderer for a source.
+@available(macOS 12.3, *)
 struct SourceRendererRegistry: Sendable {
     private let colorRenderer = ColorSourceRenderer()
     private let imageRenderer = ImageSourceRenderer()
+    private let slideshowRenderer = SlideshowSourceRenderer()
+    private let drawingRenderer = DrawingSourceRenderer()
     private let mediaRenderer = MediaSourceRenderer()
     private let cameraRenderer: CameraSourceRenderer
+    private let screenRenderer: ScreenSourceRenderer
 
-    init(captureManager: CameraCaptureManager) {
+    init(captureManager: CameraCaptureManager, screenCaptureManager: ScreenCaptureManager) {
         self.cameraRenderer = CameraSourceRenderer(captureManager: captureManager)
+        self.screenRenderer = ScreenSourceRenderer(manager: screenCaptureManager)
     }
 
     func render(
@@ -41,10 +46,16 @@ struct SourceRendererRegistry: Sendable {
             return try colorRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .image:
             return try imageRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .slideshow:
+            return try slideshowRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .drawing:
+            return try drawingRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .media:
             return try mediaRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .camera:
             return try cameraRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .screen:
+            return try screenRenderer.render(source: source, device: device, commandQueue: commandQueue)
         default:
             return nil
         }
@@ -58,6 +69,8 @@ extension Source {
         case screen
         case media
         case image
+        case slideshow
+        case drawing
         case browser
         case color
         case text
@@ -70,6 +83,8 @@ extension Source {
         case .screen: return .screen
         case .media: return .media
         case .image: return .image
+        case .slideshow: return .slideshow
+        case .drawing: return .drawing
         case .browser: return .browser
         case .color: return .color
         case .text: return .text
