@@ -13,7 +13,7 @@ struct DrawingControlsView: View {
 
     var body: some View {
         GroupBox("Drawing") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("\(store.selectedLayerDrawing?.strokes.count ?? 0) stroke(s)")
                         .font(.caption)
@@ -26,54 +26,46 @@ struct DrawingControlsView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                if let source = store.selectedLayerDrawing {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker("Tool", selection: toolBinding) {
-                            ForEach(DrawingTool.allCases) { tool in
-                                Label(tool.displayName, systemImage: tool.systemImage)
-                                    .tag(tool)
-                            }
+                if store.selectedLayerDrawing != nil {
+                    toolMenu
+
+                    HStack(spacing: 16) {
+                        ColorPicker("Color", selection: colorBinding)
+                            .labelsHidden()
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Width: \(Int(store.selectedLayerDrawing?.brushWidth ?? 4))")
+                                .font(.caption2)
+                            Slider(value: widthBinding, in: 1...100, step: 1)
                         }
-                        .pickerStyle(.segmented)
+                    }
 
-                        HStack(spacing: 12) {
-                            ColorPicker("Color", selection: colorBinding)
-                                .labelsHidden()
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Width: \(Int(source.brushWidth))")
-                                    .font(.caption2)
-                                Slider(value: widthBinding, in: 1...100, step: 1)
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            Button {
-                                store.updateSelectedLayer { layer in
-                                    guard case .drawing(var drawing) = layer.source else { return }
-                                    if !drawing.strokes.isEmpty {
-                                        drawing.strokes.removeLast()
-                                        layer.source = .drawing(drawing)
-                                    }
-                                }
-                            } label: {
-                                Label("Undo", systemImage: "arrow.uturn.backward")
-                            }
-                            .font(.caption)
-                            .disabled(source.strokes.isEmpty)
-
-                            Button {
-                                store.updateSelectedLayer { layer in
-                                    guard case .drawing(var drawing) = layer.source else { return }
-                                    drawing.strokes.removeAll()
+                    HStack(spacing: 12) {
+                        Button {
+                            store.updateSelectedLayer { layer in
+                                guard case .drawing(var drawing) = layer.source else { return }
+                                if !drawing.strokes.isEmpty {
+                                    drawing.strokes.removeLast()
                                     layer.source = .drawing(drawing)
                                 }
-                            } label: {
-                                Label("Clear", systemImage: "trash")
                             }
-                            .font(.caption)
-                            .disabled(source.strokes.isEmpty)
+                        } label: {
+                            Label("Undo", systemImage: "arrow.uturn.backward")
                         }
+                        .font(.caption)
+                        .disabled((store.selectedLayerDrawing?.strokes.isEmpty) ?? true)
+
+                        Button {
+                            store.updateSelectedLayer { layer in
+                                guard case .drawing(var drawing) = layer.source else { return }
+                                drawing.strokes.removeAll()
+                                layer.source = .drawing(drawing)
+                            }
+                        } label: {
+                            Label("Clear", systemImage: "trash")
+                        }
+                        .font(.caption)
+                        .disabled((store.selectedLayerDrawing?.strokes.isEmpty) ?? true)
                     }
                 }
             }
@@ -93,6 +85,16 @@ struct DrawingControlsView: View {
                 .frame(minWidth: 900, minHeight: 600)
             }
         }
+    }
+
+    private var toolMenu: some View {
+        Picker("Tool", selection: toolBinding) {
+            ForEach(DrawingTool.allCases) { tool in
+                Label(tool.displayName, systemImage: tool.systemImage)
+                    .tag(tool)
+            }
+        }
+        .pickerStyle(.menu)
     }
 
     private var toolBinding: Binding<DrawingTool> {

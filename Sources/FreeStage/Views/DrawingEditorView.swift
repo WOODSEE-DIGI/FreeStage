@@ -35,8 +35,8 @@ struct DrawingEditorView: View {
 
     private var toolbar: some View {
         HStack(spacing: 16) {
-            toolPicker
-                .frame(width: 260)
+            toolMenu
+                .frame(width: 140)
 
             HStack(spacing: 6) {
                 Text("Color")
@@ -78,14 +78,14 @@ struct DrawingEditorView: View {
         }
     }
 
-    private var toolPicker: some View {
+    private var toolMenu: some View {
         Picker("Tool", selection: binding(\.tool)) {
             ForEach(DrawingTool.allCases) { tool in
                 Label(tool.displayName, systemImage: tool.systemImage)
                     .tag(tool)
             }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
         .help("Select drawing tool")
     }
 
