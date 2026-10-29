@@ -11,6 +11,7 @@ import ScreenCaptureKit
 import CoreVideo
 import CoreGraphics
 import Metal
+import AppKit
 import OSLog
 
 /// Thread-safe manager for screen capture streams and their latest frames.
@@ -260,10 +261,16 @@ struct ScreenCaptureDisplay: Identifiable, Hashable, Sendable {
     }
 
     private static func screenName(for displayID: CGDirectDisplayID) -> String? {
-        NSScreen.screens.first { screen in
-            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+        guard let matched = NSScreen.screens.first(where: { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
             return number.uint32Value == displayID
-        }?.localizedName
+        }) else { return nil }
+
+        let localized = matched.localizedName
+        let trimmed = localized.trimmingCharacters(in: CharacterSet.whitespaces)
+        return trimmed.isEmpty ? nil : localized
     }
 
     static func discover() async -> [ScreenCaptureDisplay] {
