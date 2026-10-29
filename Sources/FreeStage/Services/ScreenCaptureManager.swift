@@ -253,7 +253,17 @@ struct ScreenCaptureDisplay: Identifiable, Hashable, Sendable {
     var id: CGDirectDisplayID { displayID }
 
     var name: String {
-        "Display \(displayID) (\(width)×\(height))"
+        if let screenName = Self.screenName(for: displayID) {
+            return "\(screenName) (\(width)×\(height))"
+        }
+        return "Display \(displayID) (\(width)×\(height))"
+    }
+
+    private static func screenName(for displayID: CGDirectDisplayID) -> String? {
+        NSScreen.screens.first { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return number.uint32Value == displayID
+        }?.localizedName
     }
 
     static func discover() async -> [ScreenCaptureDisplay] {
