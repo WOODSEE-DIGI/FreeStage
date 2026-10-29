@@ -502,6 +502,13 @@ final class ShowStore: NSObject {
         return drawing
     }
 
+    /// The text configuration if the selected layer is a text source.
+    var selectedLayerText: TextSource? {
+        guard let layer = selectedLayer,
+              case .text(let textSource) = layer.source else { return nil }
+        return textSource
+    }
+
     private func ensureSelectedLayerColorCorrection() -> String {
         if let layer = selectedLayer,
            let filter = layer.filters.first(where: {

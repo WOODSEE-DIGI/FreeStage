@@ -27,6 +27,7 @@ struct SourceRendererRegistry: Sendable {
     private let imageRenderer = ImageSourceRenderer()
     private let slideshowRenderer = SlideshowSourceRenderer()
     private let drawingRenderer = DrawingSourceRenderer()
+    private let textRenderer = TextSourceRenderer()
     private let mediaRenderer = MediaSourceRenderer()
     private let cameraRenderer: CameraSourceRenderer
     private let screenRenderer: ScreenSourceRenderer
@@ -50,6 +51,8 @@ struct SourceRendererRegistry: Sendable {
             return try slideshowRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .drawing:
             return try drawingRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .text:
+            return try textRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .media:
             return try mediaRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .camera:

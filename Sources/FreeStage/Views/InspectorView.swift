@@ -250,6 +250,9 @@ struct InspectorView: View {
                             if store.selectedLayerDrawing != nil {
                                 DrawingControlsView()
                             }
+                            if store.selectedLayerText != nil {
+                                TextControlsView()
+                            }
                             FilterEditorView()
                             CameraControlsView()
                         }
