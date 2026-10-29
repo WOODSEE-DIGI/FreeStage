@@ -3,7 +3,13 @@
 //  FreeStage
 //
 //  Bottom inspector for the selected cue and its layers, QLab-style.
-//  Layers are split into show-level (global) and cue-local sections.
+//
+//  A *Cue* is the playable item in the cue list. Each cue references a *Scene*,
+//  and a Scene is made of *Layers*. The "Cue Settings" tab edits the cue itself
+//  (number, name, timing, color tag, notes, camera moves). The "Scene Layers"
+//  tab edits the layers inside the cue's scene (sources, position, filters like
+//  Chroma Key). To key a camera, select its cue, switch to Scene Layers, and
+//  click the camera layer.
 //
 
 import SwiftUI
@@ -17,11 +23,16 @@ struct InspectorView: View {
         VStack(spacing: 0) {
             if store.activeCue != nil {
                 Picker("", selection: $selectedTab) {
-                    Text("Cue").tag(0)
-                    Text("Layers").tag(1)
+                    Text("Cue Settings").tag(0)
+                    Text("Scene Layers").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding()
+                .onChange(of: selectedTab) { _, newValue in
+                    if newValue == 1 {
+                        autoSelectFirstLayer()
+                    }
+                }
 
                 if selectedTab == 0 {
                     cueInspector
@@ -37,11 +48,22 @@ struct InspectorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Cue tab
+    private func autoSelectFirstLayer() {
+        guard store.selectedLayerID == nil else { return }
+        if let firstLayer = store.activeScene?.layers.first ?? store.show.globalLayers.first {
+            store.selectLayer(id: firstLayer.id)
+        }
+    }
+
+    // MARK: - Cue Settings tab
 
     private var cueInspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                Text("Settings for the selected cue in the list above.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 if let cue = store.activeCue {
                     HStack {
                         TextField("Number", text: Binding(
@@ -114,15 +136,20 @@ struct InspectorView: View {
                         timeField("Post Wait", value: cue.postWait) { newValue in store.updateActiveCue { $0.postWait = newValue } }
                     }
 
-                    TextEditor(text: Binding(
-                        get: { cue.notes },
-                        set: { newValue in store.updateActiveCue { $0.notes = newValue } }
-                    ))
-                    .frame(minHeight: 60)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.2))
-                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Notes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: Binding(
+                            get: { cue.notes },
+                            set: { newValue in store.updateActiveCue { $0.notes = newValue } }
+                        ))
+                        .frame(minHeight: 60)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.secondary.opacity(0.2))
+                        )
+                    }
 
                     cameraMoveSection(for: cue)
                 }
@@ -202,7 +229,7 @@ struct InspectorView: View {
                 }
 
                 if store.show.cameraPresets.isEmpty {
-                    Text("Save camera presets in the Layers tab to use A→B moves.")
+                    Text("Save camera presets in the Scene Layers tab to use A→B moves.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -232,59 +259,76 @@ struct InspectorView: View {
         return formatter
     }
 
-    // MARK: - Layers tab
+    // MARK: - Scene Layers tab
 
     private var layerInspector: some View {
         VStack(spacing: 0) {
             layerList
 
-                if store.selectedLayer != nil {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if let layer = store.selectedLayer {
-                                layerControls(layer: layer)
-                            }
-                            if store.selectedLayerSlideshow != nil {
-                                SlideshowControlsView()
-                            }
-                            if store.selectedLayerDrawing != nil {
-                                DrawingControlsView()
-                            }
-                            if store.selectedLayerText != nil {
-                                TextControlsView()
-                            }
-                            FilterEditorView()
-                            CameraControlsView()
+            if store.selectedLayer != nil {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if let layer = store.selectedLayer {
+                            layerControls(layer: layer)
                         }
+                        if store.selectedLayerSlideshow != nil {
+                            SlideshowControlsView()
+                        }
+                        if store.selectedLayerDrawing != nil {
+                            DrawingControlsView()
+                        }
+                        if store.selectedLayerText != nil {
+                            TextControlsView()
+                        }
+                        FilterEditorView()
+                        CameraControlsView()
                     }
                 }
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "arrow.up")
+                        .foregroundStyle(.secondary)
+                    Text("Select a layer above to edit its source, position, and filters such as Chroma Key.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
     private var layerList: some View {
         GroupBox("Layers") {
-            List(selection: Binding(
-                get: { store.selectedLayerID },
-                set: { store.selectLayer(id: $0) }
-            )) {
-                if !store.show.globalLayers.isEmpty {
-                    Section("Show Layers") {
-                        ForEach(store.show.globalLayers) { layer in
-                            layerRow(layer: layer, isGlobal: true)
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Layers in this cue's scene. Select one to edit it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                if let scene = store.activeScene {
-                    Section("Cue Layers") {
-                        ForEach(scene.layers) { layer in
-                            layerRow(layer: layer, isGlobal: false)
+                List(selection: Binding(
+                    get: { store.selectedLayerID },
+                    set: { store.selectLayer(id: $0) }
+                )) {
+                    if !store.show.globalLayers.isEmpty {
+                        Section("Show Layers") {
+                            ForEach(store.show.globalLayers) { layer in
+                                layerRow(layer: layer, isGlobal: true)
+                            }
+                        }
+                    }
+
+                    if let scene = store.activeScene {
+                        Section("Cue Layers") {
+                            ForEach(scene.layers) { layer in
+                                layerRow(layer: layer, isGlobal: false)
+                            }
                         }
                     }
                 }
+                .frame(minHeight: 80, maxHeight: 120)
+                .environment(\.defaultMinListRowHeight, 24)
             }
-            .frame(minHeight: 80, maxHeight: 120)
-            .environment(\.defaultMinListRowHeight, 24)
         }
         .padding([.horizontal, .top])
     }
@@ -309,9 +353,14 @@ struct InspectorView: View {
         GroupBox("Layer") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(layer.name)
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(layer.name)
+                            .font(.subheadline.bold())
+                            .lineLimit(1)
+                        Text(layer.source.defaultName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
 
                     Spacer()
 
@@ -334,12 +383,22 @@ struct InspectorView: View {
 
                 Divider()
 
-                Toggle("Chroma Key", isOn: Binding(
-                    get: { store.selectedLayerChromaKey?.isEnabled ?? false },
-                    set: { store.setSelectedLayerChromaKeyEnabled($0) }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Toggle("Chroma Key", isOn: Binding(
+                            get: { store.selectedLayerChromaKey?.isEnabled ?? false },
+                            set: { store.setSelectedLayerChromaKeyEnabled($0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+
+                        Spacer()
+                    }
+
+                    Text("Removes a solid color background from this layer (e.g., a green-screen camera).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
                 ChromaKeyControlsView()
                     .padding(.top, 4)
