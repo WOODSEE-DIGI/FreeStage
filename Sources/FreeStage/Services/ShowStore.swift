@@ -23,7 +23,7 @@ final class ShowStore: NSObject {
 
     var isEditMode = true
     var mastheadVisible = true
-    var sidebarVisible = false
+    var sidebarVisible = true
     var inspectorVisible = true
     var panicDuration: TimeInterval = 1.0
 
