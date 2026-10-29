@@ -83,6 +83,9 @@ struct ContentView: View {
 
     private var leftPane: some View {
         VStack(spacing: 0) {
+            SceneLibraryView()
+                .frame(minHeight: 140, idealHeight: 200)
+
             CueListView()
                 .frame(minHeight: 160)
 
@@ -96,9 +99,6 @@ struct ContentView: View {
         TabView {
             CueSettingsView()
                 .tabItem { Label("Cue", systemImage: "number") }
-
-            SceneLibraryView()
-                .tabItem { Label("Scenes", systemImage: "rectangle.stack") }
 
             AudioMixerView()
                 .tabItem { Label("Audio", systemImage: "waveform") }

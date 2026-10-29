@@ -21,7 +21,8 @@ struct SceneLibraryView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding()
+                .padding(.horizontal)
+                .padding(.vertical, 8)
 
             Divider()
 
@@ -58,20 +59,26 @@ struct SceneLibraryView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Scenes")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Scenes")
+                    .font(.headline)
 
-            HStack(spacing: 8) {
-                TextField("New scene name", text: $newSceneName)
-                    .textFieldStyle(.roundedBorder)
-                Button("Add") {
-                    addScene()
+                Spacer()
+
+                HStack(spacing: 4) {
+                    TextField("New scene", text: $newSceneName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                    Button("Add") {
+                        addScene()
+                    }
+                    .disabled(newSceneName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .controlSize(.small)
                 }
-                .disabled(newSceneName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 sourceButton("Camera", systemImage: "video.fill") { isAddingCamera = true }
                 sourceButton("Screen", systemImage: "display") { isAddingScreen = true }
                 sourceButton("Color", systemImage: "paintpalette.fill") {
@@ -88,15 +95,16 @@ struct SceneLibraryView: View {
 
     private func sourceButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Image(systemName: systemImage)
-                    .font(.caption)
+                    .font(.caption2)
                 Text(title)
                     .font(.caption2)
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderless)
+        .controlSize(.small)
         .disabled(store.activeScene == nil)
     }
 
