@@ -46,39 +46,9 @@ struct MastheadView: View {
 
             Divider()
 
-            HStack(spacing: 12) {
-                toolbarButton("Camera", systemImage: "video.fill") {
-                    isAddingCamera = true
-                }
-                toolbarButton("Screen", systemImage: "display") {
-                    isAddingScreen = true
-                }
-                toolbarButton("Color", systemImage: "paintpalette.fill") {
-                    addCue(source: .color(.green), name: "Color")
-                }
-                toolbarButton("Text", systemImage: "textformat") {
-                    addCue(source: .text(TextSource()), name: "Text")
-                }
-                toolbarButton("Image", systemImage: "photo") {
-                    // Placeholder for file picker layer.
-                    addCue(source: .color(.black), name: "Image")
-                }
-                toolbarButton("Slideshow", systemImage: "photo.stack") {
-                    isAddingSlideshow = true
-                }
-                toolbarButton("Draw", systemImage: "pencil.tip") {
-                    addDrawingCue()
-                }
-                toolbarButton("Group", systemImage: "folder.fill") {
-                    let cueID = store.addGroupCue()
-                    store.selectCue(id: cueID)
-                }
-                toolbarButton("Wait", systemImage: "clock") {
-                    addCue(source: .color(.black), name: "Wait")
-                }
-                toolbarButton("Memo", systemImage: "note.text") {
-                    addCue(source: .color(.black), name: "Memo")
-                }
+            HStack {
+                addCueMenu
+                    .padding(.leading, 4)
 
                 Spacer()
             }
@@ -108,6 +78,28 @@ struct MastheadView: View {
                 store.selectCue(id: cueID)
             }
         }
+    }
+
+    private var addCueMenu: some View {
+        Menu {
+            Button("Camera…") { isAddingCamera = true }
+            Button("Screen…") { isAddingScreen = true }
+            Button("Color") { addCue(source: .color(.green), name: "Color") }
+            Button("Text") { addCue(source: .text(TextSource()), name: "Text") }
+            Button("Image") { addCue(source: .color(.black), name: "Image") }
+            Button("Slideshow…") { isAddingSlideshow = true }
+            Button("Draw") { addDrawingCue() }
+            Divider()
+            Button("Group") {
+                let cueID = store.addGroupCue()
+                store.selectCue(id: cueID)
+            }
+            Button("Wait") { addCue(source: .color(.black), name: "Wait") }
+            Button("Memo") { addCue(source: .color(.black), name: "Memo") }
+        } label: {
+            Label("Add Cue", systemImage: "plus")
+        }
+        .menuStyle(.borderedButton)
     }
 
     private var goButton: some View {
@@ -283,19 +275,6 @@ struct MastheadView: View {
             )
         )
         .textFieldStyle(.roundedBorder)
-    }
-
-    private func toolbarButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: systemImage)
-                    .font(.title3)
-                Text(title)
-                    .font(.caption2)
-            }
-            .frame(width: 56, height: 44)
-        }
-        .buttonStyle(.borderless)
     }
 
     private var goBackground: Color {

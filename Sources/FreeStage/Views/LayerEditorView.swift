@@ -11,6 +11,10 @@ import SwiftUI
 struct LayerEditorView: View {
     @Environment(ShowStore.self) private var store
     @Environment(\.cameraCaptureManager) private var captureManager
+    @Environment(\.screenCaptureManager) private var screenCaptureManager
+    @State private var isAddingCamera = false
+    @State private var isAddingScreen = false
+    @State private var isAddingSlideshow = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,14 +60,39 @@ struct LayerEditorView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
+        .sheet(isPresented: $isAddingCamera) {
+            CameraPickerSheet { device in
+                addLayer(source: .camera(deviceID: device.uniqueID), name: device.name)
+                captureManager?.startCapture(uniqueID: device.uniqueID)
+            }
+        }
+        .sheet(isPresented: $isAddingScreen) {
+            if let screenCaptureManager {
+                ScreenPickerSheet { display in
+                    addLayer(source: .screen(displayID: display.displayID), name: "Screen \(display.displayID)")
+                    screenCaptureManager.startCapture(displayID: display.displayID)
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingSlideshow) {
+            SlideshowPickerSheet { slideshow in
+                addLayer(source: .slideshow(slideshow), name: "Slideshow")
+            }
+        }
     }
 
     private var layerList: some View {
         GroupBox("Layers") {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Layers in this cue's scene. Select one to edit it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Layers in this scene. Select one to edit it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    addLayerMenu
+                }
 
                 List(selection: Binding(
                     get: { store.selectedLayerID },
@@ -90,6 +119,30 @@ struct LayerEditorView: View {
             }
         }
         .padding([.horizontal, .top])
+    }
+
+    private var addLayerMenu: some View {
+        Menu {
+            Button("Camera…") { isAddingCamera = true }
+            Button("Screen…") { isAddingScreen = true }
+            Button("Color") { addLayer(source: .color(.green), name: "Color") }
+            Button("Text") { addLayer(source: .text(TextSource()), name: "Text") }
+            Button("Slideshow…") { isAddingSlideshow = true }
+            Button("Draw") { addLayer(source: .drawing(DrawingSource()), name: "Drawing") }
+        } label: {
+            Label("Add Layer", systemImage: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .controlSize(.small)
+        .disabled(store.activeScene == nil)
+    }
+
+    private func addLayer(source: Source, name: String) {
+        guard let scene = store.activeScene,
+              let sceneIndex = store.show.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        let layer = Layer(name: name, source: source)
+        store.show.scenes[sceneIndex].layers.append(layer)
+        store.selectLayer(id: layer.id)
     }
 
     private func layerRow(layer: Layer, isGlobal: Bool) -> some View {
