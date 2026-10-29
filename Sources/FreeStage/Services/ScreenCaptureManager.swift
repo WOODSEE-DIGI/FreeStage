@@ -89,7 +89,21 @@ final class ScreenCaptureManager: @unchecked Sendable {
             Self.logger.info("Started screen capture for display \(displayID)")
         } catch {
             Self.logger.error("Failed to start screen capture for \(displayID): \(error.localizedDescription)")
+            if Self.isPermissionError(error) {
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .screenCapturePermissionDenied,
+                        object: nil,
+                        userInfo: ["displayID": displayID, "error": error]
+                    )
+                }
+            }
         }
+    }
+
+    private static func isPermissionError(_ error: Error) -> Bool {
+        let description = error.localizedDescription.lowercased()
+        return description.contains("declined tcc") || description.contains("user declined")
     }
 
     /// Reconcile running streams with the set of display IDs that should be active.
@@ -241,6 +255,12 @@ private final class StreamDelegate: NSObject, SCStreamOutput {
             break
         }
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let screenCapturePermissionDenied = Notification.Name("com.woodseedigi.FreeStage.screenCapturePermissionDenied")
 }
 
 // MARK: - Display discovery
