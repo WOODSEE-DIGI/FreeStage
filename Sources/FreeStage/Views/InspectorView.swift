@@ -74,7 +74,7 @@ struct InspectorView: View {
                         Spacer()
                     }
 
-                    Picker("Color", selection: Binding(
+                    Picker("Cue Color", selection: Binding(
                         get: { cue.color },
                         set: { newValue in store.updateActiveCue { $0.color = newValue } }
                     )) {
