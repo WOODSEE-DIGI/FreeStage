@@ -39,6 +39,8 @@ struct BorderControlsView: View {
                 if store.selectedLayerBorder?.fillCenter == true {
                     colorRow("Fill Color", binding: fillColorBinding)
                 }
+
+                AnimationControlsView()
             }
         }
         .padding([.horizontal, .top])

@@ -25,6 +25,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     case lowerThird(LowerThirdSource)
     case chapterMarker(ChapterMarkerSource)
     case nextSection(NextSectionSource)
+    case socialBug(SocialBugSource)
+    case logoBug(LogoBugSource)
+    case countdownTimer(CountdownTimerSource)
 
     var id: String {
         switch self {
@@ -42,6 +45,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .lowerThird(let l): return "lowerThird:\(l.id)"
         case .chapterMarker(let c): return "chapterMarker:\(c.id)"
         case .nextSection(let n): return "nextSection:\(n.id)"
+        case .socialBug(let s): return "socialBug:\(s.id)"
+        case .logoBug(let l): return "logoBug:\(l.id)"
+        case .countdownTimer(let c): return "countdownTimer:\(c.id)"
         }
     }
 
@@ -61,6 +67,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .lowerThird(let l): return l.title.isEmpty ? "Lower Third" : l.title
         case .chapterMarker(let c): return c.title.isEmpty ? "Chapter" : c.title
         case .nextSection(let n): return n.title.isEmpty ? "Next Section" : n.title
+        case .socialBug(let s): return s.handle.isEmpty ? "Social Bug" : s.handle
+        case .logoBug(let l): return l.text.isEmpty ? "Logo Bug" : l.text
+        case .countdownTimer(let c): return c.label.isEmpty ? "Countdown" : c.label
         }
     }
 }
@@ -312,6 +321,7 @@ struct BorderSource: Identifiable, Hashable, Codable, Sendable {
     var gradientAngle: Double
     var fillCenter: Bool
     var fillColor: CGColorComponents
+    var animation: TemplateAnimation
 
     init(
         id: UUID = UUID(),
@@ -323,7 +333,8 @@ struct BorderSource: Identifiable, Hashable, Codable, Sendable {
         gradientEndColor: CGColorComponents = .black,
         gradientAngle: Double = 0,
         fillCenter: Bool = false,
-        fillColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0)
+        fillColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0),
+        animation: TemplateAnimation = TemplateAnimation()
     ) {
         self.id = id
         self.thickness = thickness
@@ -335,6 +346,7 @@ struct BorderSource: Identifiable, Hashable, Codable, Sendable {
         self.gradientAngle = gradientAngle
         self.fillCenter = fillCenter
         self.fillColor = fillColor
+        self.animation = animation
     }
 }
 
@@ -354,6 +366,7 @@ struct LowerThirdSource: Identifiable, Hashable, Codable, Sendable {
     var alignment: TemplateTextAlignment
     var horizontalPadding: Double
     var verticalPadding: Double
+    var animation: TemplateAnimation
 
     init(
         id: UUID = UUID(),
@@ -369,7 +382,8 @@ struct LowerThirdSource: Identifiable, Hashable, Codable, Sendable {
         gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0.5, b: 0.7, a: 0.9),
         alignment: TemplateTextAlignment = .left,
         horizontalPadding: Double = 40,
-        verticalPadding: Double = 24
+        verticalPadding: Double = 24,
+        animation: TemplateAnimation = TemplateAnimation()
     ) {
         self.id = id
         self.title = title
@@ -385,6 +399,7 @@ struct LowerThirdSource: Identifiable, Hashable, Codable, Sendable {
         self.alignment = alignment
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
+        self.animation = animation
     }
 }
 
@@ -399,6 +414,7 @@ struct ChapterMarkerSource: Identifiable, Hashable, Codable, Sendable {
     var backgroundColor: CGColorComponents
     var showProgressBar: Bool
     var progress: Double
+    var animation: TemplateAnimation
 
     init(
         id: UUID = UUID(),
@@ -409,7 +425,8 @@ struct ChapterMarkerSource: Identifiable, Hashable, Codable, Sendable {
         accentColor: CGColorComponents = .red,
         backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0.6),
         showProgressBar: Bool = true,
-        progress: Double = 0
+        progress: Double = 0,
+        animation: TemplateAnimation = TemplateAnimation()
     ) {
         self.id = id
         self.chapterNumber = chapterNumber
@@ -420,6 +437,7 @@ struct ChapterMarkerSource: Identifiable, Hashable, Codable, Sendable {
         self.backgroundColor = backgroundColor
         self.showProgressBar = showProgressBar
         self.progress = progress
+        self.animation = animation
     }
 }
 
@@ -439,6 +457,7 @@ struct NextSectionSource: Identifiable, Hashable, Codable, Sendable {
     var backgroundColor: CGColorComponents
     var gradientStartColor: CGColorComponents
     var gradientEndColor: CGColorComponents
+    var animation: TemplateAnimation
 
     init(
         id: UUID = UUID(),
@@ -454,7 +473,8 @@ struct NextSectionSource: Identifiable, Hashable, Codable, Sendable {
         fillStyle: TemplateFillStyle = .gradient,
         backgroundColor: CGColorComponents = CGColorComponents(r: 0.1, g: 0.1, b: 0.1, a: 0.8),
         gradientStartColor: CGColorComponents = CGColorComponents(r: 0.2, g: 0.2, b: 0.2, a: 0.9),
-        gradientEndColor: CGColorComponents = CGColorComponents(r: 0.05, g: 0.05, b: 0.05, a: 0.9)
+        gradientEndColor: CGColorComponents = CGColorComponents(r: 0.05, g: 0.05, b: 0.05, a: 0.9),
+        animation: TemplateAnimation = TemplateAnimation()
     ) {
         self.id = id
         self.label = label
@@ -470,5 +490,257 @@ struct NextSectionSource: Identifiable, Hashable, Codable, Sendable {
         self.backgroundColor = backgroundColor
         self.gradientStartColor = gradientStartColor
         self.gradientEndColor = gradientEndColor
+        self.animation = animation
+    }
+}
+
+// MARK: - Animation
+
+/// Animation preset for template layers.
+enum TemplateAnimationPreset: String, CaseIterable, Identifiable, Codable, Sendable {
+    case none
+    case slideFromLeft
+    case slideFromRight
+    case slideFromBottom
+    case fade
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none: return "None"
+        case .slideFromLeft: return "Slide from Left"
+        case .slideFromRight: return "Slide from Right"
+        case .slideFromBottom: return "Slide from Bottom"
+        case .fade: return "Fade"
+        }
+    }
+}
+
+/// Animation state for a template layer.
+struct TemplateAnimation: Hashable, Codable, Sendable {
+    var preset: TemplateAnimationPreset
+    var progress: Double
+    var duration: Double
+
+    init(
+        preset: TemplateAnimationPreset = .none,
+        progress: Double = 1,
+        duration: Double = 0.5
+    ) {
+        self.preset = preset
+        self.progress = max(0, min(1, progress))
+        self.duration = max(0.05, duration)
+    }
+}
+
+/// Common protocol-ish helper for template sources that support animation.
+protocol AnimatableTemplate {
+    var animation: TemplateAnimation { get set }
+}
+
+extension BorderSource: AnimatableTemplate {}
+extension LowerThirdSource: AnimatableTemplate {}
+extension ChapterMarkerSource: AnimatableTemplate {}
+extension NextSectionSource: AnimatableTemplate {}
+
+// MARK: - Additional streaming templates
+
+/// Social platform choices for the social bug template.
+enum SocialPlatform: String, CaseIterable, Identifiable, Codable, Sendable {
+    case custom
+    case twitter
+    case instagram
+    case youtube
+    case twitch
+    case tiktok
+    case linkedin
+    case facebook
+    case threads
+    case bluesky
+    case mastodon
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .custom: return "Custom"
+        case .twitter: return "X / Twitter"
+        case .instagram: return "Instagram"
+        case .youtube: return "YouTube"
+        case .twitch: return "Twitch"
+        case .tiktok: return "TikTok"
+        case .linkedin: return "LinkedIn"
+        case .facebook: return "Facebook"
+        case .threads: return "Threads"
+        case .bluesky: return "Bluesky"
+        case .mastodon: return "Mastodon"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .custom: return "at"
+        case .twitter: return "bird.fill"
+        case .instagram: return "camera.fill"
+        case .youtube: return "play.rectangle.fill"
+        case .twitch: return "play.tv.fill"
+        case .tiktok: return "music.note"
+        case .linkedin: return "briefcase.fill"
+        case .facebook: return "f.circle.fill"
+        case .threads: return "at.circle.fill"
+        case .bluesky: return "cloud.fill"
+        case .mastodon: return "bubble.left.fill"
+        }
+    }
+}
+
+/// Configuration for a social-handle bug template layer.
+struct SocialBugSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var platform: SocialPlatform
+    var handle: String
+    var label: String
+    var fontSize: Double
+    var textColor: CGColorComponents
+    var backgroundColor: CGColorComponents
+    var cornerRadius: Double
+    var padding: Double
+    var position: TemplateBugPosition
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        platform: SocialPlatform = .twitter,
+        handle: String = "@handle",
+        label: String = "",
+        fontSize: Double = 24,
+        textColor: CGColorComponents = .white,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0.7),
+        cornerRadius: Double = 8,
+        padding: Double = 12,
+        position: TemplateBugPosition = .topRight,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.platform = platform
+        self.handle = handle
+        self.label = label
+        self.fontSize = fontSize
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.cornerRadius = cornerRadius
+        self.padding = padding
+        self.position = position
+        self.animation = animation
+    }
+}
+
+/// Configuration for a logo/brand bug template layer.
+struct LogoBugSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var text: String
+    var fontSize: Double
+    var textColor: CGColorComponents
+    var backgroundColor: CGColorComponents
+    var cornerRadius: Double
+    var padding: Double
+    var position: TemplateBugPosition
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        text: String = "BRAND",
+        fontSize: Double = 28,
+        textColor: CGColorComponents = .white,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0.6),
+        cornerRadius: Double = 8,
+        padding: Double = 14,
+        position: TemplateBugPosition = .topLeft,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.text = text
+        self.fontSize = fontSize
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.cornerRadius = cornerRadius
+        self.padding = padding
+        self.position = position
+        self.animation = animation
+    }
+}
+
+/// Screen corner / edge position for bug-style templates.
+enum TemplateBugPosition: String, CaseIterable, Identifiable, Codable, Sendable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .topLeft: return "Top Left"
+        case .topRight: return "Top Right"
+        case .bottomLeft: return "Bottom Left"
+        case .bottomRight: return "Bottom Right"
+        }
+    }
+}
+
+/// Configuration for a countdown timer template layer.
+struct CountdownTimerSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var targetDate: Date
+    var label: String
+    var fontSize: Double
+    var labelFontSize: Double
+    var textColor: CGColorComponents
+    var backgroundColor: CGColorComponents
+    var showSeconds: Bool
+    var alignment: TemplateTextAlignment
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        targetDate: Date = Date().addingTimeInterval(300),
+        label: String = "Starting in",
+        fontSize: Double = 64,
+        labelFontSize: Double = 24,
+        textColor: CGColorComponents = .white,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0.6),
+        showSeconds: Bool = true,
+        alignment: TemplateTextAlignment = .center,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.targetDate = targetDate
+        self.label = label
+        self.fontSize = fontSize
+        self.labelFontSize = labelFontSize
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.showSeconds = showSeconds
+        self.alignment = alignment
+        self.animation = animation
+    }
+
+    /// Format the remaining time relative to now.
+    func formattedRemaining(from now: Date) -> String {
+        let remaining = targetDate.timeIntervalSince(now)
+        let total = max(0, Int(remaining))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else if showSeconds {
+            return String(format: "%02d:%02d", minutes, seconds)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
     }
 }

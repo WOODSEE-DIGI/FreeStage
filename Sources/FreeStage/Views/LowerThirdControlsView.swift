@@ -46,6 +46,8 @@ struct LowerThirdControlsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                AnimationControlsView()
             }
         }
         .padding([.horizontal, .top])

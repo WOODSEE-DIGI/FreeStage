@@ -537,6 +537,58 @@ final class ShowStore: NSObject {
         return next
     }
 
+    /// The social-bug configuration if the selected layer is a social-bug source.
+    var selectedLayerSocialBug: SocialBugSource? {
+        guard let layer = selectedLayer,
+              case .socialBug(let bug) = layer.source else { return nil }
+        return bug
+    }
+
+    /// The logo-bug configuration if the selected layer is a logo-bug source.
+    var selectedLayerLogoBug: LogoBugSource? {
+        guard let layer = selectedLayer,
+              case .logoBug(let bug) = layer.source else { return nil }
+        return bug
+    }
+
+    /// The countdown-timer configuration if the selected layer is a countdown-timer source.
+    var selectedLayerCountdownTimer: CountdownTimerSource? {
+        guard let layer = selectedLayer,
+              case .countdownTimer(let timer) = layer.source else { return nil }
+        return timer
+    }
+
+    /// Update the animation state of any selected animatable template layer.
+    func updateSelectedLayerAnimation(_ mutation: (inout TemplateAnimation) -> Void) {
+        updateSelectedLayer { layer in
+            switch layer.source {
+            case .border(var source):
+                mutation(&source.animation)
+                layer.source = .border(source)
+            case .lowerThird(var source):
+                mutation(&source.animation)
+                layer.source = .lowerThird(source)
+            case .chapterMarker(var source):
+                mutation(&source.animation)
+                layer.source = .chapterMarker(source)
+            case .nextSection(var source):
+                mutation(&source.animation)
+                layer.source = .nextSection(source)
+            case .socialBug(var source):
+                mutation(&source.animation)
+                layer.source = .socialBug(source)
+            case .logoBug(var source):
+                mutation(&source.animation)
+                layer.source = .logoBug(source)
+            case .countdownTimer(var source):
+                mutation(&source.animation)
+                layer.source = .countdownTimer(source)
+            default:
+                break
+            }
+        }
+    }
+
     private func ensureSelectedLayerColorCorrection() -> String {
         if let layer = selectedLayer,
            let filter = layer.filters.first(where: {

@@ -34,6 +34,8 @@ struct ChapterMarkerControlsView: View {
                         Slider(value: progressBinding, in: 0...1, step: 0.01)
                     }
                 }
+
+                AnimationControlsView()
             }
         }
         .padding([.horizontal, .top])

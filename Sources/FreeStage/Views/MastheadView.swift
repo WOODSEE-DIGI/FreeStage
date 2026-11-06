@@ -94,6 +94,9 @@ struct MastheadView: View {
             Button("Lower Third") { addCue(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
             Button("Chapter Marker") { addCue(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
             Button("Next Section") { addCue(source: .nextSection(NextSectionSource()), name: "Next Section") }
+            Button("Social Bug") { addCue(source: .socialBug(SocialBugSource()), name: "Social Bug") }
+            Button("Logo Bug") { addCue(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
+            Button("Countdown") { addCue(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
             Divider()
             Button("Group") {
                 let cueID = store.addGroupCue()

@@ -3,7 +3,8 @@
 //  FreeStage
 //
 //  Renders template layer sources (border, lower third, chapter marker,
-//  next section) into Metal textures using Core Graphics.
+//  next section, social bug, logo bug, countdown timer) into Metal textures
+//  using Core Graphics. Supports in/out animation presets.
 //
 
 import Metal
@@ -47,6 +48,17 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         case .nextSection(let s):
             sourceID = s.id
             sourceHash = s.hashValue
+        case .socialBug(let s):
+            sourceID = s.id
+            sourceHash = s.hashValue
+        case .logoBug(let s):
+            sourceID = s.id
+            sourceHash = s.hashValue
+        case .countdownTimer(let s):
+            sourceID = s.id
+            // Countdown changes every second, so include the remaining-second
+            // floor in the cache key so the texture updates once per second.
+            sourceHash = s.hashValue ^ Int(s.remainingSecondFloor(from: Date()))
         default:
             return nil
         }
@@ -118,7 +130,6 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             bitmapInfo: bitmapInfo
         ) else { return nil }
 
-        // Clear background.
         context.clear(CGRect(origin: .zero, size: size))
 
         switch source {
@@ -130,6 +141,12 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             renderChapterMarker(chapter, in: context, size: size)
         case .nextSection(let next):
             renderNextSection(next, in: context, size: size)
+        case .socialBug(let bug):
+            renderSocialBug(bug, in: context, size: size)
+        case .logoBug(let bug):
+            renderLogoBug(bug, in: context, size: size)
+        case .countdownTimer(let timer):
+            renderCountdownTimer(timer, in: context, size: size)
         default:
             break
         }
@@ -137,9 +154,44 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         return context.makeImage()
     }
 
+    // MARK: - Animation helpers
+
+    private func applyAnimation(
+        _ animation: TemplateAnimation,
+        in context: CGContext,
+        size: CGSize,
+        contentRect: CGRect
+    ) {
+        let progress = animation.progress
+        guard animation.preset != .none, progress < 1 else { return }
+
+        let hidden = 1 - progress
+        var transform = CGAffineTransform.identity
+        var alpha = 1.0
+
+        switch animation.preset {
+        case .slideFromLeft:
+            transform = transform.translatedBy(x: -size.width * hidden, y: 0)
+        case .slideFromRight:
+            transform = transform.translatedBy(x: size.width * hidden, y: 0)
+        case .slideFromBottom:
+            transform = transform.translatedBy(x: 0, y: -size.height * hidden)
+        case .fade:
+            alpha = progress
+        case .none:
+            break
+        }
+
+        context.concatenate(transform)
+        context.setAlpha(CGFloat(alpha))
+    }
+
     // MARK: - Border
 
     private func renderBorder(_ source: BorderSource, in context: CGContext, size: CGSize) {
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: CGRect(origin: .zero, size: size))
+
         let rect = CGRect(origin: .zero, size: size).insetBy(dx: source.thickness / 2, dy: source.thickness / 2)
         let path = CGPath(roundedRect: rect, cornerWidth: source.cornerRadius, cornerHeight: source.cornerRadius, transform: nil)
 
@@ -170,6 +222,8 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             )
             context.restoreGState()
         }
+
+        context.restoreGState()
     }
 
     // MARK: - Lower Third
@@ -179,7 +233,9 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         let boxHeight = textHeight + CGFloat(source.verticalPadding * 2)
         let boxRect = CGRect(x: 0, y: 0, width: size.width, height: boxHeight)
 
-        drawBackground(source: source, boxRect: boxRect, in: context, size: size)
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+        drawLowerThirdBackground(source: source, boxRect: boxRect, in: context, size: size)
 
         let textX: CGFloat
         switch source.alignment {
@@ -202,6 +258,7 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
 
         let subtitleY = titleY - CGFloat(source.subtitleFontSize) - 6
         drawText(source.subtitle, at: CGPoint(x: textX, y: subtitleY), fontSize: source.subtitleFontSize, color: source.subtitleColor, in: context)
+        context.restoreGState()
     }
 
     // MARK: - Chapter Marker
@@ -210,6 +267,9 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         let margin: CGFloat = 60
         let boxHeight: CGFloat = CGFloat(source.fontSize) + 40
         let boxRect = CGRect(x: margin, y: size.height - boxHeight - margin, width: size.width - margin * 2, height: boxHeight)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
 
         let path = CGPath(roundedRect: boxRect, cornerWidth: 8, cornerHeight: 8, transform: nil)
         context.addPath(path)
@@ -242,6 +302,8 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             context.setFillColor(cgColor(source.accentColor))
             context.fillPath()
         }
+
+        context.restoreGState()
     }
 
     // MARK: - Next Section
@@ -251,6 +313,9 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         let textHeight = CGFloat(source.labelFontSize + source.titleFontSize + source.subtitleFontSize + 20)
         let boxHeight = textHeight + 60
         let boxRect = CGRect(x: margin, y: size.height - boxHeight - margin, width: size.width - margin * 2, height: boxHeight)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
 
         switch source.fillStyle {
         case .solid:
@@ -282,11 +347,131 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
 
         let subtitleY = titleY - CGFloat(source.subtitleFontSize) - 8
         drawText(source.subtitle, at: CGPoint(x: labelX, y: subtitleY), fontSize: source.subtitleFontSize, color: source.subtitleColor, in: context)
+
+        context.restoreGState()
+    }
+
+    // MARK: - Social Bug
+
+    private func renderSocialBug(_ source: SocialBugSource, in context: CGContext, size: CGSize) {
+        let text = source.handle
+        let platformLabel = source.label.isEmpty ? source.platform.displayName : source.label
+        let displayText = platformLabel.isEmpty ? text : "\(platformLabel)  \(text)"
+
+        let padding = CGFloat(source.padding)
+        let textSize = attributedSize(for: displayText, fontSize: source.fontSize)
+        let boxSize = CGSize(width: textSize.width + padding * 2, height: textSize.height + padding * 2)
+        let boxRect = rectForBug(size: size, boxSize: boxSize, position: source.position, margin: 40)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+        let path = CGPath(roundedRect: boxRect, cornerWidth: source.cornerRadius, cornerHeight: source.cornerRadius, transform: nil)
+        context.addPath(path)
+        context.setFillColor(cgColor(source.backgroundColor))
+        context.fillPath()
+
+        drawText(displayText, at: CGPoint(x: boxRect.minX + padding, y: boxRect.minY + padding), fontSize: source.fontSize, color: source.textColor, in: context)
+
+        context.restoreGState()
+    }
+
+    // MARK: - Logo Bug
+
+    private func renderLogoBug(_ source: LogoBugSource, in context: CGContext, size: CGSize) {
+        let text = source.text
+        let padding = CGFloat(source.padding)
+        let textSize = attributedSize(for: text, fontSize: source.fontSize)
+        let boxSize = CGSize(width: textSize.width + padding * 2, height: textSize.height + padding * 2)
+        let boxRect = rectForBug(size: size, boxSize: boxSize, position: source.position, margin: 40)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+        let path = CGPath(roundedRect: boxRect, cornerWidth: source.cornerRadius, cornerHeight: source.cornerRadius, transform: nil)
+        context.addPath(path)
+        context.setFillColor(cgColor(source.backgroundColor))
+        context.fillPath()
+
+        drawText(text, at: CGPoint(x: boxRect.minX + padding, y: boxRect.minY + padding), fontSize: source.fontSize, color: source.textColor, in: context)
+
+        context.restoreGState()
+    }
+
+    // MARK: - Countdown Timer
+
+    private func renderCountdownTimer(_ source: CountdownTimerSource, in context: CGContext, size: CGSize) {
+        let label = source.label
+        let remaining = source.formattedRemaining(from: Date())
+
+        let timeSize = attributedSize(for: remaining, fontSize: source.fontSize)
+        let labelSize = label.isEmpty ? .zero : attributedSize(for: label, fontSize: source.labelFontSize)
+        let boxWidth = max(timeSize.width, labelSize.width) + 80
+        let boxHeight = timeSize.height + labelSize.height + (labelSize.height > 0 ? 16 : 0) + 40
+
+        let boxRect = CGRect(
+            x: (size.width - boxWidth) / 2,
+            y: (size.height - boxHeight) / 2,
+            width: boxWidth,
+            height: boxHeight
+        )
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+        let path = CGPath(roundedRect: boxRect, cornerWidth: 16, cornerHeight: 16, transform: nil)
+        context.addPath(path)
+        context.setFillColor(cgColor(source.backgroundColor))
+        context.fillPath()
+
+        let timeX: CGFloat
+        let labelX: CGFloat
+        switch source.alignment {
+        case .left:
+            timeX = boxRect.minX + 40
+            labelX = boxRect.minX + 40
+        case .right:
+            timeX = boxRect.maxX - 40 - timeSize.width
+            labelX = boxRect.maxX - 40 - labelSize.width
+        case .center:
+            timeX = boxRect.midX - timeSize.width / 2
+            labelX = boxRect.midX - labelSize.width / 2
+        }
+
+        let timeY = boxRect.midY - 6
+        drawText(remaining, at: CGPoint(x: timeX, y: timeY), fontSize: source.fontSize, color: source.textColor, in: context)
+
+        if !label.isEmpty {
+            let labelY = timeY + timeSize.height + 8
+            drawText(label, at: CGPoint(x: labelX, y: labelY), fontSize: source.labelFontSize, color: source.textColor, in: context)
+        }
+
+        context.restoreGState()
     }
 
     // MARK: - Helpers
 
-    private func drawBackground(source: LowerThirdSource, boxRect: CGRect, in context: CGContext, size: CGSize) {
+    private func rectForBug(size: CGSize, boxSize: CGSize, position: TemplateBugPosition, margin: CGFloat) -> CGRect {
+        let x: CGFloat
+        let y: CGFloat
+        switch position {
+        case .topLeft:
+            x = margin
+            y = size.height - boxSize.height - margin
+        case .topRight:
+            x = size.width - boxSize.width - margin
+            y = size.height - boxSize.height - margin
+        case .bottomLeft:
+            x = margin
+            y = margin
+        case .bottomRight:
+            x = size.width - boxSize.width - margin
+            y = margin
+        }
+        return CGRect(x: x, y: y, width: boxSize.width, height: boxSize.height)
+    }
+
+    private func drawLowerThirdBackground(source: LowerThirdSource, boxRect: CGRect, in context: CGContext, size: CGSize) {
         switch source.fillStyle {
         case .solid:
             let path = CGPath(roundedRect: boxRect, cornerWidth: 0, cornerHeight: 0, transform: nil)
@@ -346,5 +531,11 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
 
     private func cgColor(_ components: CGColorComponents) -> CGColor {
         CGColor(red: components.r, green: components.g, blue: components.b, alpha: components.a)
+    }
+}
+
+private extension CountdownTimerSource {
+    func remainingSecondFloor(from now: Date) -> TimeInterval {
+        max(0, targetDate.timeIntervalSince(now))
     }
 }

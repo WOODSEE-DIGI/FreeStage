@@ -42,6 +42,8 @@ struct NextSectionControlsView: View {
                     colorRow("Start", binding: gradientStartBinding)
                     colorRow("End", binding: gradientEndBinding)
                 }
+
+                AnimationControlsView()
             }
         }
         .padding([.horizontal, .top])

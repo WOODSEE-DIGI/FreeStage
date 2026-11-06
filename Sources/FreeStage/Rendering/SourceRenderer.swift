@@ -54,7 +54,7 @@ struct SourceRendererRegistry: Sendable {
             return try drawingRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .text:
             return try textRenderer.render(source: source, device: device, commandQueue: commandQueue)
-        case .border, .lowerThird, .chapterMarker, .nextSection:
+        case .border, .lowerThird, .chapterMarker, .nextSection, .socialBug, .logoBug, .countdownTimer:
             return try templateRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .media:
             return try mediaRenderer.render(source: source, device: device, commandQueue: commandQueue)
@@ -84,6 +84,9 @@ extension Source {
         case lowerThird
         case chapterMarker
         case nextSection
+        case socialBug
+        case logoBug
+        case countdownTimer
     }
 
     var kind: Kind {
@@ -102,6 +105,9 @@ extension Source {
         case .lowerThird: return .lowerThird
         case .chapterMarker: return .chapterMarker
         case .nextSection: return .nextSection
+        case .socialBug: return .socialBug
+        case .logoBug: return .logoBug
+        case .countdownTimer: return .countdownTimer
         }
     }
 }

@@ -47,6 +47,15 @@ struct LayerEditorView: View {
                             if store.selectedLayerNextSection != nil {
                                 NextSectionControlsView()
                             }
+                            if store.selectedLayerSocialBug != nil {
+                                SocialBugControlsView()
+                            }
+                            if store.selectedLayerLogoBug != nil {
+                                LogoBugControlsView()
+                            }
+                            if store.selectedLayerCountdownTimer != nil {
+                                CountdownTimerControlsView()
+                            }
 
                             FilterEditorView()
                             CameraControlsView()
@@ -146,6 +155,9 @@ struct LayerEditorView: View {
             Button("Lower Third") { addLayer(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
             Button("Chapter Marker") { addLayer(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
             Button("Next Section") { addLayer(source: .nextSection(NextSectionSource()), name: "Next Section") }
+            Button("Social Bug") { addLayer(source: .socialBug(SocialBugSource()), name: "Social Bug") }
+            Button("Logo Bug") { addLayer(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
+            Button("Countdown") { addLayer(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
         } label: {
             Label("Add Layer", systemImage: "plus")
         }
