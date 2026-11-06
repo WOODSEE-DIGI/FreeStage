@@ -90,6 +90,11 @@ struct MastheadView: View {
             Button("Slideshow…") { isAddingSlideshow = true }
             Button("Draw") { addDrawingCue() }
             Divider()
+            Button("Border") { addCue(source: .border(BorderSource()), name: "Border") }
+            Button("Lower Third") { addCue(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
+            Button("Chapter Marker") { addCue(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
+            Button("Next Section") { addCue(source: .nextSection(NextSectionSource()), name: "Next Section") }
+            Divider()
             Button("Group") {
                 let cueID = store.addGroupCue()
                 store.selectCue(id: cueID)

@@ -28,6 +28,7 @@ struct SourceRendererRegistry: Sendable {
     private let slideshowRenderer = SlideshowSourceRenderer()
     private let drawingRenderer = DrawingSourceRenderer()
     private let textRenderer = TextSourceRenderer()
+    private let templateRenderer = TemplateSourceRenderer()
     private let mediaRenderer = MediaSourceRenderer()
     private let cameraRenderer: CameraSourceRenderer
     private let screenRenderer: ScreenSourceRenderer
@@ -53,6 +54,8 @@ struct SourceRendererRegistry: Sendable {
             return try drawingRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .text:
             return try textRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .border, .lowerThird, .chapterMarker, .nextSection:
+            return try templateRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .media:
             return try mediaRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .camera:
@@ -77,6 +80,10 @@ extension Source {
         case browser
         case color
         case text
+        case border
+        case lowerThird
+        case chapterMarker
+        case nextSection
     }
 
     var kind: Kind {
@@ -91,6 +98,10 @@ extension Source {
         case .browser: return .browser
         case .color: return .color
         case .text: return .text
+        case .border: return .border
+        case .lowerThird: return .lowerThird
+        case .chapterMarker: return .chapterMarker
+        case .nextSection: return .nextSection
         }
     }
 }

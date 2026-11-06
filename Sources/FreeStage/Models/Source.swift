@@ -21,6 +21,10 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     case color(CGColorComponents)
     case text(TextSource)
     case drawing(DrawingSource)
+    case border(BorderSource)
+    case lowerThird(LowerThirdSource)
+    case chapterMarker(ChapterMarkerSource)
+    case nextSection(NextSectionSource)
 
     var id: String {
         switch self {
@@ -34,6 +38,10 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .color(let c): return "color:\(c)"
         case .text(let t): return "text:\(t.id)"
         case .drawing(let d): return "drawing:\(d.id)"
+        case .border(let b): return "border:\(b.id)"
+        case .lowerThird(let l): return "lowerThird:\(l.id)"
+        case .chapterMarker(let c): return "chapterMarker:\(c.id)"
+        case .nextSection(let n): return "nextSection:\(n.id)"
         }
     }
 
@@ -49,6 +57,10 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .color: return "Color"
         case .text(let t): return t.content.isEmpty ? "Text" : t.content
         case .drawing: return "Drawing"
+        case .border: return "Border"
+        case .lowerThird(let l): return l.title.isEmpty ? "Lower Third" : l.title
+        case .chapterMarker(let c): return c.title.isEmpty ? "Chapter" : c.title
+        case .nextSection(let n): return n.title.isEmpty ? "Next Section" : n.title
         }
     }
 }
@@ -251,5 +263,212 @@ enum SlideTransition: String, CaseIterable, Identifiable, Codable, Sendable {
         case .cut: return "Cut"
         case .dissolve: return "Dissolve"
         }
+    }
+}
+
+// MARK: - Template sources
+
+/// Horizontal alignment for template text.
+enum TemplateTextAlignment: String, CaseIterable, Identifiable, Codable, Sendable {
+    case left
+    case center
+    case right
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .left: return "Left"
+        case .center: return "Center"
+        case .right: return "Right"
+        }
+    }
+}
+
+/// Fill style for template shapes: solid color or linear gradient.
+enum TemplateFillStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case solid
+    case gradient
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .solid: return "Solid"
+        case .gradient: return "Gradient"
+        }
+    }
+}
+
+/// Configuration for a border/frame template layer.
+struct BorderSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var thickness: Double
+    var cornerRadius: Double
+    var fillStyle: TemplateFillStyle
+    var color: CGColorComponents
+    var gradientStartColor: CGColorComponents
+    var gradientEndColor: CGColorComponents
+    var gradientAngle: Double
+    var fillCenter: Bool
+    var fillColor: CGColorComponents
+
+    init(
+        id: UUID = UUID(),
+        thickness: Double = 8,
+        cornerRadius: Double = 0,
+        fillStyle: TemplateFillStyle = .solid,
+        color: CGColorComponents = .white,
+        gradientStartColor: CGColorComponents = .white,
+        gradientEndColor: CGColorComponents = .black,
+        gradientAngle: Double = 0,
+        fillCenter: Bool = false,
+        fillColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0)
+    ) {
+        self.id = id
+        self.thickness = thickness
+        self.cornerRadius = cornerRadius
+        self.fillStyle = fillStyle
+        self.color = color
+        self.gradientStartColor = gradientStartColor
+        self.gradientEndColor = gradientEndColor
+        self.gradientAngle = gradientAngle
+        self.fillCenter = fillCenter
+        self.fillColor = fillColor
+    }
+}
+
+/// Configuration for a lower-third graphic template layer.
+struct LowerThirdSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var title: String
+    var subtitle: String
+    var titleFontSize: Double
+    var subtitleFontSize: Double
+    var titleColor: CGColorComponents
+    var subtitleColor: CGColorComponents
+    var fillStyle: TemplateFillStyle
+    var backgroundColor: CGColorComponents
+    var gradientStartColor: CGColorComponents
+    var gradientEndColor: CGColorComponents
+    var alignment: TemplateTextAlignment
+    var horizontalPadding: Double
+    var verticalPadding: Double
+
+    init(
+        id: UUID = UUID(),
+        title: String = "Name",
+        subtitle: String = "Role / Detail",
+        titleFontSize: Double = 48,
+        subtitleFontSize: Double = 28,
+        titleColor: CGColorComponents = .white,
+        subtitleColor: CGColorComponents = .white,
+        fillStyle: TemplateFillStyle = .solid,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0.3, b: 0.6, a: 0.85),
+        gradientStartColor: CGColorComponents = CGColorComponents(r: 0, g: 0.2, b: 0.5, a: 0.9),
+        gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0.5, b: 0.7, a: 0.9),
+        alignment: TemplateTextAlignment = .left,
+        horizontalPadding: Double = 40,
+        verticalPadding: Double = 24
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.titleFontSize = titleFontSize
+        self.subtitleFontSize = subtitleFontSize
+        self.titleColor = titleColor
+        self.subtitleColor = subtitleColor
+        self.fillStyle = fillStyle
+        self.backgroundColor = backgroundColor
+        self.gradientStartColor = gradientStartColor
+        self.gradientEndColor = gradientEndColor
+        self.alignment = alignment
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+    }
+}
+
+/// Configuration for a chapter-marker template layer.
+struct ChapterMarkerSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var chapterNumber: String
+    var title: String
+    var fontSize: Double
+    var textColor: CGColorComponents
+    var accentColor: CGColorComponents
+    var backgroundColor: CGColorComponents
+    var showProgressBar: Bool
+    var progress: Double
+
+    init(
+        id: UUID = UUID(),
+        chapterNumber: String = "01",
+        title: String = "Chapter Title",
+        fontSize: Double = 42,
+        textColor: CGColorComponents = .white,
+        accentColor: CGColorComponents = .red,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0.6),
+        showProgressBar: Bool = true,
+        progress: Double = 0
+    ) {
+        self.id = id
+        self.chapterNumber = chapterNumber
+        self.title = title
+        self.fontSize = fontSize
+        self.textColor = textColor
+        self.accentColor = accentColor
+        self.backgroundColor = backgroundColor
+        self.showProgressBar = showProgressBar
+        self.progress = progress
+    }
+}
+
+/// Configuration for a "next section / coming up" template layer.
+struct NextSectionSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var label: String
+    var title: String
+    var subtitle: String
+    var titleFontSize: Double
+    var subtitleFontSize: Double
+    var labelFontSize: Double
+    var titleColor: CGColorComponents
+    var subtitleColor: CGColorComponents
+    var labelColor: CGColorComponents
+    var fillStyle: TemplateFillStyle
+    var backgroundColor: CGColorComponents
+    var gradientStartColor: CGColorComponents
+    var gradientEndColor: CGColorComponents
+
+    init(
+        id: UUID = UUID(),
+        label: String = "UP NEXT",
+        title: String = "Section Title",
+        subtitle: String = "Brief description of what's coming up next.",
+        titleFontSize: Double = 44,
+        subtitleFontSize: Double = 24,
+        labelFontSize: Double = 18,
+        titleColor: CGColorComponents = .white,
+        subtitleColor: CGColorComponents = .white,
+        labelColor: CGColorComponents = .white,
+        fillStyle: TemplateFillStyle = .gradient,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0.1, g: 0.1, b: 0.1, a: 0.8),
+        gradientStartColor: CGColorComponents = CGColorComponents(r: 0.2, g: 0.2, b: 0.2, a: 0.9),
+        gradientEndColor: CGColorComponents = CGColorComponents(r: 0.05, g: 0.05, b: 0.05, a: 0.9)
+    ) {
+        self.id = id
+        self.label = label
+        self.title = title
+        self.subtitle = subtitle
+        self.titleFontSize = titleFontSize
+        self.subtitleFontSize = subtitleFontSize
+        self.labelFontSize = labelFontSize
+        self.titleColor = titleColor
+        self.subtitleColor = subtitleColor
+        self.labelColor = labelColor
+        self.fillStyle = fillStyle
+        self.backgroundColor = backgroundColor
+        self.gradientStartColor = gradientStartColor
+        self.gradientEndColor = gradientEndColor
     }
 }

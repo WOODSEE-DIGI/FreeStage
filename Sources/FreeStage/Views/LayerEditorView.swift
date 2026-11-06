@@ -35,6 +35,18 @@ struct LayerEditorView: View {
                             if store.selectedLayerText != nil {
                                 TextControlsView()
                             }
+                            if store.selectedLayerBorder != nil {
+                                BorderControlsView()
+                            }
+                            if store.selectedLayerLowerThird != nil {
+                                LowerThirdControlsView()
+                            }
+                            if store.selectedLayerChapterMarker != nil {
+                                ChapterMarkerControlsView()
+                            }
+                            if store.selectedLayerNextSection != nil {
+                                NextSectionControlsView()
+                            }
 
                             FilterEditorView()
                             CameraControlsView()
@@ -129,6 +141,11 @@ struct LayerEditorView: View {
             Button("Text") { addLayer(source: .text(TextSource()), name: "Text") }
             Button("Slideshow…") { isAddingSlideshow = true }
             Button("Draw") { addLayer(source: .drawing(DrawingSource()), name: "Drawing") }
+            Divider()
+            Button("Border") { addLayer(source: .border(BorderSource()), name: "Border") }
+            Button("Lower Third") { addLayer(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
+            Button("Chapter Marker") { addLayer(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
+            Button("Next Section") { addLayer(source: .nextSection(NextSectionSource()), name: "Next Section") }
         } label: {
             Label("Add Layer", systemImage: "plus")
         }

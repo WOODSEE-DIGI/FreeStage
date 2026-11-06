@@ -509,6 +509,34 @@ final class ShowStore: NSObject {
         return textSource
     }
 
+    /// The border configuration if the selected layer is a border source.
+    var selectedLayerBorder: BorderSource? {
+        guard let layer = selectedLayer,
+              case .border(let border) = layer.source else { return nil }
+        return border
+    }
+
+    /// The lower-third configuration if the selected layer is a lower-third source.
+    var selectedLayerLowerThird: LowerThirdSource? {
+        guard let layer = selectedLayer,
+              case .lowerThird(let lowerThird) = layer.source else { return nil }
+        return lowerThird
+    }
+
+    /// The chapter-marker configuration if the selected layer is a chapter-marker source.
+    var selectedLayerChapterMarker: ChapterMarkerSource? {
+        guard let layer = selectedLayer,
+              case .chapterMarker(let chapter) = layer.source else { return nil }
+        return chapter
+    }
+
+    /// The next-section configuration if the selected layer is a next-section source.
+    var selectedLayerNextSection: NextSectionSource? {
+        guard let layer = selectedLayer,
+              case .nextSection(let next) = layer.source else { return nil }
+        return next
+    }
+
     private func ensureSelectedLayerColorCorrection() -> String {
         if let layer = selectedLayer,
            let filter = layer.filters.first(where: {
