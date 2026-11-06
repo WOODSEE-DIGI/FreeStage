@@ -97,6 +97,9 @@ struct MastheadView: View {
             Button("Social Bug") { addCue(source: .socialBug(SocialBugSource()), name: "Social Bug") }
             Button("Logo Bug") { addCue(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
             Button("Countdown") { addCue(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
+            Button("Image Logo Bug") { addCue(source: .imageLogoBug(ImageLogoBugSource()), name: "Image Logo Bug") }
+            Button("Ticker") { addCue(source: .ticker(TickerSource()), name: "Ticker") }
+            Button("Playlist") { addCue(source: .playlist(PlaylistSource()), name: "Playlist") }
             Divider()
             Button("Group") {
                 let cueID = store.addGroupCue()

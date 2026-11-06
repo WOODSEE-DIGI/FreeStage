@@ -558,6 +558,27 @@ final class ShowStore: NSObject {
         return timer
     }
 
+    /// The image-logo-bug configuration if the selected layer is an image-logo-bug source.
+    var selectedLayerImageLogoBug: ImageLogoBugSource? {
+        guard let layer = selectedLayer,
+              case .imageLogoBug(let bug) = layer.source else { return nil }
+        return bug
+    }
+
+    /// The ticker configuration if the selected layer is a ticker source.
+    var selectedLayerTicker: TickerSource? {
+        guard let layer = selectedLayer,
+              case .ticker(let ticker) = layer.source else { return nil }
+        return ticker
+    }
+
+    /// The playlist configuration if the selected layer is a playlist source.
+    var selectedLayerPlaylist: PlaylistSource? {
+        guard let layer = selectedLayer,
+              case .playlist(let playlist) = layer.source else { return nil }
+        return playlist
+    }
+
     /// Update the animation state of any selected animatable template layer.
     func updateSelectedLayerAnimation(_ mutation: (inout TemplateAnimation) -> Void) {
         updateSelectedLayer { layer in
@@ -583,6 +604,15 @@ final class ShowStore: NSObject {
             case .countdownTimer(var source):
                 mutation(&source.animation)
                 layer.source = .countdownTimer(source)
+            case .imageLogoBug(var source):
+                mutation(&source.animation)
+                layer.source = .imageLogoBug(source)
+            case .ticker(var source):
+                mutation(&source.animation)
+                layer.source = .ticker(source)
+            case .playlist(var source):
+                mutation(&source.animation)
+                layer.source = .playlist(source)
             default:
                 break
             }

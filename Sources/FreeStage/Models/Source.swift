@@ -28,6 +28,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     case socialBug(SocialBugSource)
     case logoBug(LogoBugSource)
     case countdownTimer(CountdownTimerSource)
+    case imageLogoBug(ImageLogoBugSource)
+    case ticker(TickerSource)
+    case playlist(PlaylistSource)
 
     var id: String {
         switch self {
@@ -48,6 +51,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .socialBug(let s): return "socialBug:\(s.id)"
         case .logoBug(let l): return "logoBug:\(l.id)"
         case .countdownTimer(let c): return "countdownTimer:\(c.id)"
+        case .imageLogoBug(let i): return "imageLogoBug:\(i.id)"
+        case .ticker(let t): return "ticker:\(t.id)"
+        case .playlist(let p): return "playlist:\(p.id)"
         }
     }
 
@@ -70,6 +76,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .socialBug(let s): return s.handle.isEmpty ? "Social Bug" : s.handle
         case .logoBug(let l): return l.text.isEmpty ? "Logo Bug" : l.text
         case .countdownTimer(let c): return c.label.isEmpty ? "Countdown" : c.label
+        case .imageLogoBug(let i): return i.imageURL?.deletingPathExtension().lastPathComponent ?? "Logo Bug"
+        case .ticker(let t): return t.items.first ?? "Ticker"
+        case .playlist(let p): return p.items.first?.title ?? "Playlist"
         }
     }
 }
@@ -742,5 +751,215 @@ struct CountdownTimerSource: Identifiable, Hashable, Codable, Sendable {
         } else {
             return String(format: "%02d:%02d", minutes, seconds)
         }
+    }
+}
+
+// MARK: - Image logo bug
+
+/// Configuration for an image-based logo/brand bug template layer.
+struct ImageLogoBugSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var imageURL: URL?
+    var position: TemplateBugPosition
+    var width: Double
+    var cornerRadius: Double
+    var backgroundColor: CGColorComponents
+    var padding: Double
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        imageURL: URL? = nil,
+        position: TemplateBugPosition = .topRight,
+        width: Double = 200,
+        cornerRadius: Double = 8,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 0),
+        padding: Double = 0,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.imageURL = imageURL
+        self.position = position
+        self.width = width
+        self.cornerRadius = cornerRadius
+        self.backgroundColor = backgroundColor
+        self.padding = padding
+        self.animation = animation
+    }
+}
+
+// MARK: - Scrolling ticker
+
+enum TickerDirection: String, CaseIterable, Identifiable, Codable, Sendable {
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .left: return "Scroll Left"
+        case .right: return "Scroll Right"
+        }
+    }
+}
+
+enum TickerVerticalPosition: String, CaseIterable, Identifiable, Codable, Sendable {
+    case top
+    case bottom
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .top: return "Top"
+        case .bottom: return "Bottom"
+        }
+    }
+}
+
+/// Configuration for a scrolling ticker / news banner template layer.
+struct TickerSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var items: [String]
+    var separator: String
+    var speed: Double
+    var direction: TickerDirection
+    var fontSize: Double
+    var textColor: CGColorComponents
+    var backgroundColor: CGColorComponents
+    var verticalPosition: TickerVerticalPosition
+    var height: Double
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        items: [String] = ["Breaking news", "Live stream in progress"],
+        separator: String = "   •   ",
+        speed: Double = 120,
+        direction: TickerDirection = .left,
+        fontSize: Double = 28,
+        textColor: CGColorComponents = .white,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0.8, g: 0, b: 0, a: 0.9),
+        verticalPosition: TickerVerticalPosition = .bottom,
+        height: Double = 48,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.items = items
+        self.separator = separator
+        self.speed = speed
+        self.direction = direction
+        self.fontSize = fontSize
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.verticalPosition = verticalPosition
+        self.height = height
+        self.animation = animation
+    }
+
+    var tickerText: String {
+        items.filter { !$0.isEmpty }.joined(separator: separator)
+    }
+}
+
+// MARK: - Playlist rotation
+
+enum PlaylistItemStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case lowerThird
+    case socialBug
+    case simple
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .lowerThird: return "Lower Third"
+        case .socialBug: return "Social Bug"
+        case .simple: return "Simple"
+        }
+    }
+}
+
+/// A single item in a playlist rotation.
+struct PlaylistItem: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var title: String
+    var subtitle: String
+    var style: PlaylistItemStyle
+    var duration: TimeInterval
+
+    init(
+        id: UUID = UUID(),
+        title: String = "Title",
+        subtitle: String = "Subtitle",
+        style: PlaylistItemStyle = .lowerThird,
+        duration: TimeInterval = 5
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.style = style
+        self.duration = max(1, duration)
+    }
+}
+
+/// Configuration for a playlist-rotation template layer that cycles through
+/// messages automatically.
+struct PlaylistSource: Identifiable, Hashable, Codable, Sendable {
+    let id: UUID
+    var items: [PlaylistItem]
+    var loop: Bool
+    var displayDuration: TimeInterval
+    var crossfadeDuration: TimeInterval
+    var backgroundColor: CGColorComponents
+    var accentColor: CGColorComponents
+    var textColor: CGColorComponents
+    var fontSize: Double
+    var subtitleFontSize: Double
+    var animation: TemplateAnimation
+
+    init(
+        id: UUID = UUID(),
+        items: [PlaylistItem] = [
+            PlaylistItem(title: "Welcome", subtitle: "Thanks for joining"),
+            PlaylistItem(title: "Follow us", subtitle: "@freestage")
+        ],
+        loop: Bool = true,
+        displayDuration: TimeInterval = 5,
+        crossfadeDuration: TimeInterval = 0.5,
+        backgroundColor: CGColorComponents = CGColorComponents(r: 0, g: 0.3, b: 0.6, a: 0.85),
+        accentColor: CGColorComponents = .white,
+        textColor: CGColorComponents = .white,
+        fontSize: Double = 42,
+        subtitleFontSize: Double = 24,
+        animation: TemplateAnimation = TemplateAnimation()
+    ) {
+        self.id = id
+        self.items = items
+        self.loop = loop
+        self.displayDuration = max(1, displayDuration)
+        self.crossfadeDuration = max(0, crossfadeDuration)
+        self.backgroundColor = backgroundColor
+        self.accentColor = accentColor
+        self.textColor = textColor
+        self.fontSize = fontSize
+        self.subtitleFontSize = subtitleFontSize
+        self.animation = animation
+    }
+
+    /// Index and local progress (0...1) for the current item based on elapsed time.
+    func item(at elapsed: TimeInterval) -> (index: Int, progress: Double, isLast: Bool)? {
+        guard !items.isEmpty else { return nil }
+        let cycleDuration = displayDuration + crossfadeDuration
+        let totalDuration = cycleDuration * Double(items.count)
+        guard loop || elapsed < totalDuration else { return nil }
+
+        let wrapped = loop ? elapsed.truncatingRemainder(dividingBy: totalDuration) : elapsed
+        let rawIndex = Int(wrapped / cycleDuration)
+        let index = min(rawIndex, items.count - 1)
+        let local = wrapped - Double(index) * cycleDuration
+        let progress = min(1, max(0, local / displayDuration))
+        return (index: index, progress: progress, isLast: index == items.count - 1 && !loop)
     }
 }

@@ -56,6 +56,15 @@ struct LayerEditorView: View {
                             if store.selectedLayerCountdownTimer != nil {
                                 CountdownTimerControlsView()
                             }
+                            if store.selectedLayerImageLogoBug != nil {
+                                ImageLogoBugControlsView()
+                            }
+                            if store.selectedLayerTicker != nil {
+                                TickerControlsView()
+                            }
+                            if store.selectedLayerPlaylist != nil {
+                                PlaylistControlsView()
+                            }
 
                             FilterEditorView()
                             CameraControlsView()
@@ -158,6 +167,9 @@ struct LayerEditorView: View {
             Button("Social Bug") { addLayer(source: .socialBug(SocialBugSource()), name: "Social Bug") }
             Button("Logo Bug") { addLayer(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
             Button("Countdown") { addLayer(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
+            Button("Image Logo Bug") { addLayer(source: .imageLogoBug(ImageLogoBugSource()), name: "Image Logo Bug") }
+            Button("Ticker") { addLayer(source: .ticker(TickerSource()), name: "Ticker") }
+            Button("Playlist") { addLayer(source: .playlist(PlaylistSource()), name: "Playlist") }
         } label: {
             Label("Add Layer", systemImage: "plus")
         }

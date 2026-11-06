@@ -3,8 +3,9 @@
 //  FreeStage
 //
 //  Renders template layer sources (border, lower third, chapter marker,
-//  next section, social bug, logo bug, countdown timer) into Metal textures
-//  using Core Graphics. Supports in/out animation presets.
+//  next section, social bug, logo bug, countdown timer, image logo bug,
+//  scrolling ticker, playlist rotation) into Metal textures using Core
+//  Graphics. Supports in/out animation presets.
 //
 
 import Metal
@@ -35,6 +36,7 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
     ) throws -> MTLTexture? {
         let sourceID: UUID
         let sourceHash: Int
+        let now = Date()
         switch source {
         case .border(let s):
             sourceID = s.id
@@ -56,9 +58,16 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             sourceHash = s.hashValue
         case .countdownTimer(let s):
             sourceID = s.id
-            // Countdown changes every second, so include the remaining-second
-            // floor in the cache key so the texture updates once per second.
-            sourceHash = s.hashValue ^ Int(s.remainingSecondFloor(from: Date()))
+            sourceHash = s.hashValue ^ Int(s.remainingSecondFloor(from: now))
+        case .imageLogoBug(let s):
+            sourceID = s.id
+            sourceHash = s.hashValue ^ Int(now.timeIntervalSince1970)
+        case .ticker(let s):
+            sourceID = s.id
+            sourceHash = s.hashValue ^ Int(now.timeIntervalSince1970 * s.speed / 10)
+        case .playlist(let s):
+            sourceID = s.id
+            sourceHash = s.hashValue ^ Int(now.timeIntervalSince1970)
         default:
             return nil
         }
@@ -94,7 +103,7 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
                 return nil
             }
 
-            guard let cgImage = renderCGImage(source: source, size: CGSize(width: width, height: height)) else {
+            guard let cgImage = renderCGImage(source: source, size: CGSize(width: width, height: height), now: now) else {
                 ciContextLock.unlock()
                 return nil
             }
@@ -115,7 +124,7 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         }
     }
 
-    private func renderCGImage(source: Source, size: CGSize) -> CGImage? {
+    private func renderCGImage(source: Source, size: CGSize, now: Date) -> CGImage? {
         let width = Int(size.width)
         let height = Int(size.height)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -146,7 +155,13 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
         case .logoBug(let bug):
             renderLogoBug(bug, in: context, size: size)
         case .countdownTimer(let timer):
-            renderCountdownTimer(timer, in: context, size: size)
+            renderCountdownTimer(timer, in: context, size: size, now: now)
+        case .imageLogoBug(let bug):
+            renderImageLogoBug(bug, in: context, size: size)
+        case .ticker(let ticker):
+            renderTicker(ticker, in: context, size: size, now: now)
+        case .playlist(let playlist):
+            renderPlaylist(playlist, in: context, size: size, now: now)
         default:
             break
         }
@@ -400,9 +415,9 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
 
     // MARK: - Countdown Timer
 
-    private func renderCountdownTimer(_ source: CountdownTimerSource, in context: CGContext, size: CGSize) {
+    private func renderCountdownTimer(_ source: CountdownTimerSource, in context: CGContext, size: CGSize, now: Date) {
         let label = source.label
-        let remaining = source.formattedRemaining(from: Date())
+        let remaining = source.formattedRemaining(from: now)
 
         let timeSize = attributedSize(for: remaining, fontSize: source.fontSize)
         let labelSize = label.isEmpty ? .zero : attributedSize(for: label, fontSize: source.labelFontSize)
@@ -445,6 +460,131 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             let labelY = timeY + timeSize.height + 8
             drawText(label, at: CGPoint(x: labelX, y: labelY), fontSize: source.labelFontSize, color: source.textColor, in: context)
         }
+
+        context.restoreGState()
+    }
+
+    // MARK: - Image Logo Bug
+
+    private func renderImageLogoBug(_ source: ImageLogoBugSource, in context: CGContext, size: CGSize) {
+        let boxRect: CGRect
+        let image: NSImage?
+
+        if let url = source.imageURL {
+            let accessing = url.startAccessingSecurityScopedResource()
+            image = NSImage(contentsOf: url)
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        } else {
+            image = nil
+        }
+
+        if let image {
+            let targetWidth = CGFloat(source.width)
+            let targetHeight = targetWidth * (image.size.height / max(1, image.size.width))
+            boxRect = rectForBug(size: size, boxSize: CGSize(width: targetWidth + source.padding * 2, height: targetHeight + source.padding * 2), position: source.position, margin: 40)
+
+            context.saveGState()
+            applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+            if source.backgroundColor.a > 0 {
+                let path = CGPath(roundedRect: boxRect, cornerWidth: source.cornerRadius, cornerHeight: source.cornerRadius, transform: nil)
+                context.addPath(path)
+                context.setFillColor(cgColor(source.backgroundColor))
+                context.fillPath()
+            }
+
+            let drawRect = CGRect(x: boxRect.minX + source.padding, y: boxRect.minY + source.padding, width: targetWidth, height: targetHeight)
+            image.draw(in: drawRect)
+            context.restoreGState()
+        } else {
+            let placeholder = source.imageURL?.lastPathComponent ?? "No Image"
+            let textSize = attributedSize(for: placeholder, fontSize: 24)
+            boxRect = rectForBug(size: size, boxSize: CGSize(width: textSize.width + 40, height: textSize.height + 40), position: source.position, margin: 40)
+
+            context.saveGState()
+            applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+            let path = CGPath(roundedRect: boxRect, cornerWidth: source.cornerRadius, cornerHeight: source.cornerRadius, transform: nil)
+            context.addPath(path)
+            context.setFillColor(CGColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 0.8))
+            context.fillPath()
+
+            drawText(placeholder, at: CGPoint(x: boxRect.minX + 20, y: boxRect.minY + 20), fontSize: 24, color: .white, in: context)
+            context.restoreGState()
+        }
+    }
+
+    // MARK: - Ticker
+
+    private func renderTicker(_ source: TickerSource, in context: CGContext, size: CGSize, now: Date) {
+        let tickerText = source.tickerText
+        guard !tickerText.isEmpty else { return }
+
+        let textSize = attributedSize(for: tickerText, fontSize: source.fontSize)
+        let boxRect = CGRect(x: 0, y: source.verticalPosition == .top ? size.height - source.height : 0, width: size.width, height: source.height)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+        context.addRect(boxRect)
+        context.setFillColor(cgColor(source.backgroundColor))
+        context.fillPath()
+
+        let offset = CGFloat(now.timeIntervalSinceReferenceDate * source.speed)
+        let repeatedWidth = textSize.width + 60
+        let baseOffset: CGFloat
+        switch source.direction {
+        case .left:
+            baseOffset = -(offset.truncatingRemainder(dividingBy: repeatedWidth))
+        case .right:
+            baseOffset = (offset.truncatingRemainder(dividingBy: repeatedWidth)) - repeatedWidth
+        }
+
+        context.addRect(boxRect)
+        context.clip()
+
+        var x = baseOffset
+        while x < size.width + repeatedWidth {
+            let y = boxRect.midY - textSize.height / 2
+            drawText(tickerText, at: CGPoint(x: x, y: y), fontSize: source.fontSize, color: source.textColor, in: context)
+            x += repeatedWidth
+        }
+
+        context.restoreGState()
+    }
+
+    // MARK: - Playlist
+
+    private func renderPlaylist(_ source: PlaylistSource, in context: CGContext, size: CGSize, now: Date) {
+        guard let current = source.item(at: now.timeIntervalSinceReferenceDate) else {
+            return
+        }
+        let item = source.items[current.index]
+
+        let textHeight = CGFloat(source.fontSize + source.subtitleFontSize + 12)
+        let boxHeight = textHeight + 60
+        let boxRect = CGRect(x: 60, y: 60, width: size.width - 120, height: boxHeight)
+
+        context.saveGState()
+        applyAnimation(source.animation, in: context, size: size, contentRect: boxRect)
+
+        let path = CGPath(roundedRect: boxRect, cornerWidth: 12, cornerHeight: 12, transform: nil)
+        context.addPath(path)
+        context.setFillColor(cgColor(source.backgroundColor))
+        context.fillPath()
+
+        let accentWidth: CGFloat = 6
+        let accentRect = CGRect(x: boxRect.minX, y: boxRect.minY, width: accentWidth, height: boxRect.height)
+        context.addRect(accentRect)
+        context.setFillColor(cgColor(source.accentColor))
+        context.fillPath()
+
+        let textX = boxRect.minX + 30
+        let titleY = boxRect.maxY - 30 - CGFloat(source.fontSize)
+        drawText(item.title, at: CGPoint(x: textX, y: titleY), fontSize: source.fontSize, color: source.textColor, in: context)
+
+        let subtitleY = titleY - CGFloat(source.subtitleFontSize) - 8
+        drawText(item.subtitle, at: CGPoint(x: textX, y: subtitleY), fontSize: source.subtitleFontSize, color: source.textColor, in: context)
 
         context.restoreGState()
     }
