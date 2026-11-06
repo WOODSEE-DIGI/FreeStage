@@ -747,9 +747,9 @@ final class ObsbotPTZController {
         guard let connection = oscConnection else { return }
         let message = OSCMessage(address: address, arguments: arguments)
         let data = message.encoded
-        connection.send(content: data, completion: .contentProcessed { error in
+        connection.send(content: data, completion: .contentProcessed { [weak self] error in
             if let error {
-                Task { @MainActor [weak self] in
+                Task { @MainActor in
                     self?.lastError = "OSC send failed: \(error.localizedDescription)"
                 }
             }
@@ -763,7 +763,7 @@ final class ObsbotPTZController {
     private func listenForOSCReplies(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             if let data, let message = OSCMessage.decode(data) {
-                Task { @MainActor [weak self] in
+                Task { @MainActor in
                     self?.handleOSCReply(message)
                 }
             }

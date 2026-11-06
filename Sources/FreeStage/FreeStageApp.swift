@@ -45,6 +45,7 @@ struct FreeStageApp: App {
         captureManager.cameraControlService = cameraControlService
         store.cameraControlService = cameraControlService
         screenCaptureManager.audioMixer = audioMixer
+        screenCaptureManager.excludeDesktopIcons = appSettings.hideDesktopIconsDuringCapture
         recordingService.setAudioMixer(audioMixer)
         recordingService.configure(with: appSettings)
         streamingService.setAudioMixer(audioMixer)
@@ -101,6 +102,9 @@ struct FreeStageApp: App {
                 }
                 .onChange(of: appSettings.oscCueServerPort) {
                     syncOSCCueServer()
+                }
+                .onChange(of: appSettings.hideDesktopIconsDuringCapture) {
+                    screenCaptureManager.setExcludeDesktopIcons(appSettings.hideDesktopIconsDuringCapture)
                 }
         }
         .defaultSize(width: 1600, height: 1024)
