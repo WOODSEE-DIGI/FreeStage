@@ -25,12 +25,15 @@ struct LayerParams {
 struct FilterParams {
     uint flags;
     uint keyColorCount;
+    float2 _pad0;
     float4 keyColors[MAX_KEY_COLORS];
     float keyThreshold;
     float keySmoothing;
     float keyEdgeFeather;
     float keySpillAmount;
     float keySpillRange;
+    float keyEdgeDespill;
+    float keySkinProtection;
     float ccBrightness;
     float ccContrast;
     float ccSaturation;
@@ -55,22 +58,22 @@ static float2 chromaVector(float3 rgb) {
     return float2(cb, cr);
 }
 
-static float minChromaDistance(float3 fg, constant float4 *keyColors, int count) {
-    if (count <= 0) { return 1000.0; }
+static float minChromaDistance(float3 fg, constant FilterParams &filters, int count) {
+    int safeCount = max(count, 1);
     float2 fgChroma = chromaVector(fg);
-    float minDist = distance(fgChroma, chromaVector(keyColors[0].rgb));
-    for (int i = 1; i < count; i++) {
-        float d = distance(fgChroma, chromaVector(keyColors[i].rgb));
+    float minDist = distance(fgChroma, chromaVector(filters.keyColors[0].rgb));
+    for (int i = 1; i < safeCount; i++) {
+        float d = distance(fgChroma, chromaVector(filters.keyColors[i].rgb));
         minDist = min(minDist, d);
     }
     return minDist;
 }
 
-static float3 dominantKeyColor(constant float4 *keyColors, int count) {
-    if (count <= 0) { return float3(0.0, 1.0, 0.0); }
+static float3 dominantKeyColor(constant FilterParams &filters, int count) {
+    int safeCount = max(count, 1);
     float3 sum = float3(0.0);
-    for (int i = 0; i < count; i++) { sum += keyColors[i].rgb; }
-    return sum / float(count);
+    for (int i = 0; i < safeCount; i++) { sum += filters.keyColors[i].rgb; }
+    return sum / float(safeCount);
 }
 
 static float3 applyColorCorrection(float3 rgb, constant FilterParams &filters) {
@@ -103,8 +106,9 @@ static float3 applyColorCorrection(float3 rgb, constant FilterParams &filters) {
     );
     c = hueMatrix * c;
 
-    // Temperature / tint approximation.
-    float temp = filters.ccTemperature / 100.0;
+    // Temperature / tint approximation. The UI range is -1...1, so scale it
+    // to a visibly effective ±20% red/blue shift.
+    float temp = filters.ccTemperature * 0.2;
     c.r *= 1.0 + temp;
     c.b *= 1.0 - temp;
     c.g *= 1.0 + filters.ccTint * 0.5;
@@ -112,9 +116,22 @@ static float3 applyColorCorrection(float3 rgb, constant FilterParams &filters) {
     return clamp(c, 0.0, 1.0);
 }
 
+static float skinToneMask(float3 rgb) {
+    // Approximate skin-tone detection: warm hues with red > green > blue
+    // and moderate luminance. Returns 1.0 for skin, 0.0 for non-skin.
+    float r = rgb.r;
+    float g = rgb.g;
+    float b = rgb.b;
+    bool warm = r > g && g > b && r > 0.25;
+    bool notTooRed = r < 0.95 && g < 0.75;
+    float luma = dot(rgb, float3(0.299, 0.587, 0.114));
+    bool brightEnough = luma > 0.08 && luma < 0.95;
+    return (warm && notTooRed && brightEnough) ? 1.0 : 0.0;
+}
+
 static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
-    int count = min(int(filters.keyColorCount), MAX_KEY_COLORS);
-    float chromaDist = minChromaDistance(src.rgb, filters.keyColors, count);
+    int count = max(min(int(filters.keyColorCount), MAX_KEY_COLORS), 1);
+    float chromaDist = minChromaDistance(src.rgb, filters, count);
 
     float halfSmooth = max(filters.keySmoothing, 0.001) * 0.5;
     float matte = smoothstep(
@@ -128,32 +145,51 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
         matte = smoothstep(0.0 + feather, 1.0 - feather, matte);
     }
 
-    float spillRange = max(filters.keySpillRange, filters.keyThreshold);
-    float spillFactor = 1.0 - smoothstep(
-        filters.keyThreshold,
-        spillRange,
-        chromaDist
-    );
-    spillFactor *= (1.0 - matte) * filters.keySpillAmount;
+    // Edge proximity: 1.0 right at the key threshold, falling off into
+    // solid foreground and solid background. Used to boost despill on edges.
+    float edgeProximity = 1.0 - abs(matte - 0.5) * 2.0;
+    edgeProximity = pow(edgeProximity, 2.0);
 
-    float3 keyColor = dominantKeyColor(filters.keyColors, count);
+    // Spill range is the distance *past* the key threshold where green/blue
+    // fringing on foreground edges should be suppressed. Apply the correction
+    // to visible foreground pixels (matte > 0), not to fully keyed-out areas.
+    float spillEnd = filters.keyThreshold + filters.keySpillRange;
+    float spillFactor = 0.0;
+    if (spillEnd > filters.keyThreshold) {
+        spillFactor = 1.0 - smoothstep(
+            filters.keyThreshold,
+            spillEnd,
+            chromaDist
+        );
+    }
+
+    // Boost spill suppression near the edge and by the edge-despill control.
+    float edgeBoost = 1.0 + edgeProximity * filters.keyEdgeDespill * 2.0;
+    spillFactor *= matte * filters.keySpillAmount * edgeBoost;
+
+    // Reduce despill on skin tones when skin-tone protection is enabled.
+    float skinMask = skinToneMask(src.rgb);
+    spillFactor *= 1.0 - skinMask * filters.keySkinProtection;
+
+    float3 keyColor = dominantKeyColor(filters, count);
     float3 spill = src.rgb;
     bool isGreen = keyColor.g > max(keyColor.r, keyColor.b);
     bool isBlue  = keyColor.b > max(keyColor.r, keyColor.g);
 
     if (isGreen) {
         float greenExcess = max(0.0, spill.g - (spill.r + spill.b) * 0.5);
-        spill.g -= greenExcess * spillFactor;
-        spill.r += greenExcess * spillFactor * 0.45;
-        spill.b += greenExcess * spillFactor * 0.45;
+        // Stronger green suppression; add more red/blue to cancel green cast.
+        spill.g -= greenExcess * spillFactor * 1.4;
+        spill.r += greenExcess * spillFactor * 0.6;
+        spill.b += greenExcess * spillFactor * 0.55;
     } else if (isBlue) {
         float blueExcess = max(0.0, spill.b - (spill.r + spill.g) * 0.5);
-        spill.b -= blueExcess * spillFactor;
-        spill.r += blueExcess * spillFactor * 0.45;
-        spill.g += blueExcess * spillFactor * 0.45;
+        spill.b -= blueExcess * spillFactor * 1.4;
+        spill.r += blueExcess * spillFactor * 0.65;
+        spill.g += blueExcess * spillFactor * 0.5;
     } else {
         float3 toKey = keyColor - spill;
-        spill -= toKey * spillFactor * 0.5;
+        spill -= toKey * spillFactor * 0.75;
     }
 
     return float4(clamp(spill, 0.0, 1.0), src.a * matte);
@@ -239,4 +275,21 @@ kernel void clearOutput(
 {
     if (gid.x >= output.get_width() || gid.y >= output.get_height()) { return; }
     output.write(float4(0.0), gid);
+}
+
+/// Copy a source texture into a destination texture of a different size using
+/// bilinear sampling. Used when the on-screen drawable is smaller than the
+/// program output texture (e.g. during recording or virtual camera output).
+kernel void blitScaled(
+    texture2d<float, access::sample> source [[texture(0)]],
+    texture2d<float, access::write> destination [[texture(1)]],
+    uint2 gid [[thread_position_in_grid]]
+)
+{
+    if (gid.x >= destination.get_width() || gid.y >= destination.get_height()) { return; }
+
+    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    float2 uv = float2(gid) / float2(destination.get_width(), destination.get_height());
+    float4 color = source.sample(linearSampler, uv);
+    destination.write(color, gid);
 }

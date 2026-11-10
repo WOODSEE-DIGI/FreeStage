@@ -1,0 +1,431 @@
+#include "mediapipe_face.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <exception>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "tflite_c_api.h"
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define MP_BS_LOG_TAG "MediapipeBlendshapes"
+#define MP_BS_LOGI(...) \
+  __android_log_print(ANDROID_LOG_INFO, MP_BS_LOG_TAG, __VA_ARGS__)
+#define MP_BS_LOGE(...) \
+  __android_log_print(ANDROID_LOG_ERROR, MP_BS_LOG_TAG, __VA_ARGS__)
+#else
+#define MP_BS_LOGI(...) std::fprintf(stdout, "[INFO] " __VA_ARGS__)
+#define MP_BS_LOGE(...) std::fprintf(stderr, "[ERROR] " __VA_ARGS__)
+#endif
+
+namespace {
+
+constexpr int kBlendshapeCount = 52;
+constexpr int kBlendshapeInputLandmarkCount = 146;
+// The blendshapes model consumes a subset that reaches into the iris landmarks
+// (468..477), so the source result must contain the full 478 landmarks.
+constexpr int kMinRequiredLandmarks = 478;
+
+// Subset of the 478 landmarks required by the blendshapes model, in the exact
+// order expected by the model input. Mirrors MediaPipe's kLandmarksSubsetIdxs.
+constexpr int kBlendshapeLandmarkSubset[kBlendshapeInputLandmarkCount] = {
+    0,   1,   4,   5,   6,   7,   8,   10,  13,  14,  17,  21,  33,  37,  39,
+    40,  46,  52,  53,  54,  55,  58,  61,  63,  65,  66,  67,  70,  78,  80,
+    81,  82,  84,  87,  88,  91,  93,  95,  103, 105, 107, 109, 127, 132, 133,
+    136, 144, 145, 146, 148, 149, 150, 152, 153, 154, 155, 157, 158, 159, 160,
+    161, 162, 163, 168, 172, 173, 176, 178, 181, 185, 191, 195, 197, 234, 246,
+    249, 251, 263, 267, 269, 270, 276, 282, 283, 284, 285, 288, 291, 293, 295,
+    296, 297, 300, 308, 310, 311, 312, 314, 317, 318, 321, 323, 324, 332, 334,
+    336, 338, 356, 361, 362, 365, 373, 374, 375, 377, 378, 379, 380, 381, 382,
+    384, 385, 386, 387, 388, 389, 390, 397, 398, 400, 402, 405, 409, 415, 454,
+    466, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477};
+
+class BlendshapesContext {
+ public:
+  BlendshapesContext() = default;
+  ~BlendshapesContext() { Shutdown(); }
+
+  bool Initialize(const std::string& model_path,
+                  const MpBlendshapesCreateOptions* options) {
+    threads_ = (options && options->threads > 0) ? options->threads : 2;
+
+    model_.reset(TfLiteModelCreateFromFile(model_path.c_str()));
+    if (!model_) {
+      SetError("Unable to load blendshapes model file: " + model_path);
+      return false;
+    }
+
+    options_.reset(TfLiteInterpreterOptionsCreate());
+    if (!options_) {
+      SetError("Failed to allocate interpreter options.");
+      return false;
+    }
+    TfLiteInterpreterOptionsSetNumThreads(options_.get(), threads_);
+
+    const MpDelegateType delegate_choice =
+        options ? static_cast<MpDelegateType>(options->delegate)
+                : MP_DELEGATE_CPU;
+    const bool allow_delegate_fallback =
+        !options || options->disable_delegate_fallback == 0;
+    active_delegate_ = MP_DELEGATE_CPU;
+    auto AttachDelegate = [&](TfLiteDelegate* created,
+                              TfLiteDelegateDeleter::DeleteFn deleter,
+                              const char* name, MpDelegateType delegate_type) {
+      if (!created) {
+        return false;
+      }
+      delegate_.get_deleter().deleter = deleter;
+      delegate_.reset(created);
+      TfLiteInterpreterOptionsAddDelegate(
+          options_.get(),
+          reinterpret_cast<TfLiteOpaqueDelegate*>(delegate_.get()));
+      active_delegate_ = delegate_type;
+      MP_BS_LOGI("Blendshapes %s delegate enabled.\n", name);
+      return true;
+    };
+
+    switch (delegate_choice) {
+      case MP_DELEGATE_XNNPACK: {
+        TfLiteXNNPackDelegateOptions xnnpack_options =
+            TfLiteXNNPackDelegateOptionsDefault();
+        xnnpack_options.num_threads = threads_;
+        AttachDelegate(TfLiteXNNPackDelegateCreate(&xnnpack_options),
+                       TfLiteXNNPackDelegateDelete, "XNNPACK",
+                       MP_DELEGATE_XNNPACK);
+        break;
+      }
+      case MP_DELEGATE_CPU:
+      default:
+        break;
+    }
+
+    if (!allow_delegate_fallback && delegate_choice != MP_DELEGATE_CPU &&
+        active_delegate_ != delegate_choice) {
+      SetError("Failed to create requested delegate for blendshapes model "
+               "because delegate fallback is disabled.");
+      return false;
+    }
+
+    interpreter_.reset(TfLiteInterpreterCreate(model_.get(), options_.get()));
+    bool tensors_ready =
+        interpreter_ &&
+        TfLiteInterpreterAllocateTensors(interpreter_.get()) == kTfLiteOk;
+    // A delegate can also fail after it is attached, while the interpreter
+    // builds or allocates tensors. Honor delegate fallback for that stage
+    // too.
+    if (!tensors_ready && active_delegate_ != MP_DELEGATE_CPU &&
+        allow_delegate_fallback) {
+      MP_BS_LOGE(
+          "Blendshapes interpreter creation with the requested delegate "
+          "failed. Falling back to CPU.\n");
+      interpreter_.reset();
+      options_.reset(TfLiteInterpreterOptionsCreate());
+      delegate_.reset();
+      if (!options_) {
+        SetError("Failed to allocate interpreter options.");
+        return false;
+      }
+      TfLiteInterpreterOptionsSetNumThreads(options_.get(), threads_);
+      active_delegate_ = MP_DELEGATE_CPU;
+      interpreter_.reset(
+          TfLiteInterpreterCreate(model_.get(), options_.get()));
+      tensors_ready =
+          interpreter_ &&
+          TfLiteInterpreterAllocateTensors(interpreter_.get()) == kTfLiteOk;
+    }
+    if (!interpreter_) {
+      SetError("Failed to create blendshapes interpreter.");
+      return false;
+    }
+    if (!tensors_ready) {
+      SetError("Blendshapes tensor allocation failed.");
+      return false;
+    }
+    if (TfLiteInterpreterGetInputTensorCount(interpreter_.get()) < 1) {
+      SetError("Blendshapes interpreter input tensor missing.");
+      return false;
+    }
+    input_tensor_ = TfLiteInterpreterGetInputTensor(interpreter_.get(), 0);
+    if (!input_tensor_ ||
+        TfLiteTensorType(input_tensor_) != kTfLiteFloat32) {
+      SetError("Blendshapes model input must be float32.");
+      return false;
+    }
+    if (TensorElementCount(input_tensor_) !=
+        static_cast<size_t>(kBlendshapeInputLandmarkCount * 2)) {
+      SetError("Blendshapes model expects a 146x2 landmark input.");
+      return false;
+    }
+    input_buffer_.resize(static_cast<size_t>(kBlendshapeInputLandmarkCount * 2));
+
+    if (TfLiteInterpreterGetOutputTensorCount(interpreter_.get()) < 1) {
+      SetError("Blendshapes model output missing.");
+      return false;
+    }
+    output_tensor_ = TfLiteInterpreterGetOutputTensor(interpreter_.get(), 0);
+    if (!output_tensor_ ||
+        TfLiteTensorType(output_tensor_) != kTfLiteFloat32) {
+      SetError("Blendshapes output tensor must be float32.");
+      return false;
+    }
+    if (TensorElementCount(output_tensor_) !=
+        static_cast<size_t>(kBlendshapeCount)) {
+      SetError("Blendshapes model must output 52 coefficients.");
+      return false;
+    }
+    output_buffer_.resize(static_cast<size_t>(kBlendshapeCount));
+    MP_BS_LOGI("Blendshapes initialize success\n");
+    return true;
+  }
+
+  MpBlendshapesResult* Process(const MpLandmark* landmarks,
+                               int landmarks_count, int image_width,
+                               int image_height) {
+    if (!interpreter_) {
+      SetError("Blendshapes interpreter is not initialized.");
+      return nullptr;
+    }
+    if (!landmarks || landmarks_count < kMinRequiredLandmarks) {
+      SetError("Blendshapes require at least 478 landmarks (enable iris).");
+      return nullptr;
+    }
+    if (image_width <= 0 || image_height <= 0) {
+      SetError("Invalid image size for blendshapes.");
+      return nullptr;
+    }
+
+    const float width = static_cast<float>(image_width);
+    const float height = static_cast<float>(image_height);
+    for (int i = 0; i < kBlendshapeInputLandmarkCount; ++i) {
+      const MpLandmark& landmark = landmarks[kBlendshapeLandmarkSubset[i]];
+      input_buffer_[i * 2] = landmark.x * width;
+      input_buffer_[i * 2 + 1] = landmark.y * height;
+    }
+
+    if (TfLiteTensorCopyFromBuffer(input_tensor_, input_buffer_.data(),
+                                   input_buffer_.size() * sizeof(float)) !=
+        kTfLiteOk) {
+      SetError("Failed to copy blendshapes input buffer.");
+      return nullptr;
+    }
+    if (TfLiteInterpreterInvoke(interpreter_.get()) != kTfLiteOk) {
+      SetError("Blendshapes invocation failed.");
+      return nullptr;
+    }
+    if (TfLiteTensorCopyToBuffer(output_tensor_, output_buffer_.data(),
+                                 output_buffer_.size() * sizeof(float)) !=
+        kTfLiteOk) {
+      SetError("Unable to read blendshapes output.");
+      return nullptr;
+    }
+
+    std::unique_ptr<float[]> scores(new float[kBlendshapeCount]);
+    for (int i = 0; i < kBlendshapeCount; ++i) {
+      scores[i] = output_buffer_[i];
+    }
+    std::unique_ptr<MpBlendshapesResult> result(new MpBlendshapesResult());
+    result->scores = scores.release();
+    result->scores_count = kBlendshapeCount;
+    return result.release();
+  }
+
+  const char* last_error() const { return last_error_.c_str(); }
+
+  // Records an error raised outside the class, e.g. a C++ exception caught
+  // at the FFI boundary.
+  void RecordError(const std::string& message) { SetError(message); }
+
+  MpDelegateType active_delegate() const { return active_delegate_; }
+
+ private:
+  struct TfLiteModelDeleter {
+    void operator()(TfLiteModel* model) const {
+      if (model) {
+        TfLiteModelDelete(model);
+      }
+    }
+  };
+
+  struct TfLiteOptionsDeleter {
+    void operator()(TfLiteInterpreterOptions* options) const {
+      if (options) {
+        TfLiteInterpreterOptionsDelete(options);
+      }
+    }
+  };
+
+  struct TfLiteInterpreterDeleter {
+    void operator()(TfLiteInterpreter* interpreter) const {
+      if (interpreter) {
+        TfLiteInterpreterDelete(interpreter);
+      }
+    }
+  };
+
+  struct TfLiteDelegateDeleter {
+    using DeleteFn = void (*)(TfLiteDelegate*);
+    DeleteFn deleter = nullptr;
+    void operator()(TfLiteDelegate* delegate) const {
+      if (deleter && delegate) {
+        deleter(delegate);
+      }
+    }
+  };
+
+  void Shutdown() {
+    interpreter_.reset();
+    options_.reset();
+    model_.reset();
+    delegate_.reset();
+  }
+
+  size_t TensorElementCount(const TfLiteTensor* tensor) const {
+    int total = 1;
+    const int dims = TfLiteTensorNumDims(tensor);
+    for (int i = 0; i < dims; ++i) {
+      total *= TfLiteTensorDim(tensor, i);
+    }
+    return static_cast<size_t>(total);
+  }
+
+  void SetError(const std::string& message) {
+    last_error_ = message;
+    MP_BS_LOGE("%s\n", message.c_str());
+  }
+
+  std::unique_ptr<TfLiteModel, TfLiteModelDeleter> model_;
+  std::unique_ptr<TfLiteInterpreterOptions, TfLiteOptionsDeleter> options_;
+  std::unique_ptr<TfLiteInterpreter, TfLiteInterpreterDeleter> interpreter_;
+  std::unique_ptr<TfLiteDelegate, TfLiteDelegateDeleter> delegate_{nullptr, {}};
+
+  TfLiteTensor* input_tensor_ = nullptr;
+  const TfLiteTensor* output_tensor_ = nullptr;
+
+  int threads_ = 2;
+  MpDelegateType active_delegate_ = MP_DELEGATE_CPU;
+
+  std::vector<float> input_buffer_;
+  std::vector<float> output_buffer_;
+  std::string last_error_;
+};
+
+thread_local std::string g_bs_last_global_error;
+
+void SetGlobalBlendshapesError(const std::string& message) {
+  g_bs_last_global_error = message;
+}
+
+}  // namespace
+
+struct MpBlendshapesContext {
+  BlendshapesContext impl;
+};
+
+namespace {
+
+// No C++ exception may unwind across the FFI boundary into Dart (the process
+// would abort), so pointer-returning exports run their body through this
+// guard, which converts an escaped exception (std::bad_alloc included) into
+// a null return with the error recorded on the context, when there is one,
+// and globally.
+template <typename Fn>
+auto GuardedNative(MpBlendshapesContext* context, Fn&& body)
+    -> decltype(body()) {
+  try {
+    return body();
+  } catch (const std::exception& e) {
+    const std::string message =
+        std::string("Unhandled native exception: ") + e.what();
+    if (context) {
+      context->impl.RecordError(message);
+    }
+    SetGlobalBlendshapesError(message);
+    return nullptr;
+  } catch (...) {
+    const std::string message = "Unhandled native exception.";
+    if (context) {
+      context->impl.RecordError(message);
+    }
+    SetGlobalBlendshapesError(message);
+    return nullptr;
+  }
+}
+
+}  // namespace
+
+extern "C" {
+
+FFI_PLUGIN_EXPORT MpBlendshapesContext* mp_blendshapes_create(
+    const char* model_path, const MpBlendshapesCreateOptions* options) {
+  return GuardedNative(nullptr, [&]() -> MpBlendshapesContext* {
+    if (!model_path) {
+      SetGlobalBlendshapesError("Model path is null.");
+      return nullptr;
+    }
+    auto context = std::make_unique<MpBlendshapesContext>();
+    if (!context->impl.Initialize(model_path, options)) {
+      SetGlobalBlendshapesError(context->impl.last_error());
+      return nullptr;
+    }
+    return context.release();
+  });
+}
+
+FFI_PLUGIN_EXPORT void mp_blendshapes_destroy(MpBlendshapesContext* context) {
+  try {
+    delete context;
+  } catch (...) {
+  }
+}
+
+FFI_PLUGIN_EXPORT MpBlendshapesResult* mp_blendshapes_process(
+    MpBlendshapesContext* context, const MpLandmark* landmarks,
+    int32_t landmarks_count, int32_t image_width, int32_t image_height) {
+  return GuardedNative(context, [&]() -> MpBlendshapesResult* {
+    if (!context) {
+      SetGlobalBlendshapesError("Context is null.");
+      return nullptr;
+    }
+    return context->impl.Process(landmarks, landmarks_count, image_width,
+                                 image_height);
+  });
+}
+
+FFI_PLUGIN_EXPORT void mp_blendshapes_release_result(
+    MpBlendshapesResult* result) {
+  if (!result) {
+    return;
+  }
+  delete[] result->scores;
+  result->scores = nullptr;
+  delete result;
+}
+
+FFI_PLUGIN_EXPORT const char* mp_blendshapes_last_error(
+    const MpBlendshapesContext* context) {
+  if (!context) {
+    return nullptr;
+  }
+  return context->impl.last_error();
+}
+
+FFI_PLUGIN_EXPORT const char* mp_blendshapes_last_global_error(void) {
+  return g_bs_last_global_error.c_str();
+}
+
+FFI_PLUGIN_EXPORT MpDelegateType mp_blendshapes_active_delegate(
+    const MpBlendshapesContext* context) {
+  if (!context) {
+    return MP_DELEGATE_CPU;
+  }
+  return context->impl.active_delegate();
+}
+
+}  // extern "C"

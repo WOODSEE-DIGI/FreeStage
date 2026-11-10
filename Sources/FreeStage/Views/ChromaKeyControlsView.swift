@@ -2,7 +2,7 @@
 //  ChromaKeyControlsView.swift
 //  FreeStage
 //
-//  Reusable chroma-key controls (key color, tuning sliders, background picker).
+//  Reusable chroma-key controls (key colors, tuning sliders, background picker).
 //  Embedded directly in the layer inspector as a first-class toggle so users
 //  don't have to dig through the Add Filter sub-menu.
 //
@@ -19,16 +19,22 @@ private let chromaKeyLogger = Logger(subsystem: "com.woodseedigi.FreeStage", cat
 struct ChromaKeyControlsView: View {
     @Environment(ShowStore.self) private var store
     @State private var isPickingBackground = false
+    @State private var isPickingSlideshow = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let filter = store.selectedLayerChromaKey {
                 controls(for: filter)
             } else {
-                Text("Chroma key is off.")
+                Text("Enable Chroma Key above to adjust settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .onAppear {
+            // Keep the controls visible and editable for camera layers even
+            // when chroma key has never been turned on.
+            store.ensureSelectedLayerChromaKeyFilter()
         }
         .fileImporter(
             isPresented: $isPickingBackground,
@@ -55,43 +61,139 @@ struct ChromaKeyControlsView: View {
                 chromaKeyLogger.error("fileImporter failed: \(error.localizedDescription)")
             }
         }
+        .sheet(isPresented: $isPickingSlideshow) {
+            SlideshowPickerSheet { slideshow in
+                store.updateSelectedLayerChromaKey { $0.backgroundSource = .slideshow(slideshow) }
+            }
+        }
     }
 
     @ViewBuilder
     private func controls(for filter: ChromaKeyFilter) -> some View {
-        HStack {
-            Text("Key Color")
-                .font(.caption)
-            Spacer()
-            ColorPicker("", selection: Binding(
-                get: { Color(rgb: filter.keyColor) },
-                set: { newColor in
-                    let rgb = RGBColor(color: newColor)
-                    store.updateSelectedLayerChromaKey { $0.keyColor = rgb }
-                }
-            ))
-            .labelsHidden()
-            .frame(width: 60)
+        if !filter.isEnabled {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                Text("Chroma Key is disabled. Enable it above to see the effect.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 4)
         }
 
-        slider("Threshold", value: filter.threshold, range: 0...1) { newValue in
+        HStack {
+            Text("A / B")
+                .font(.caption)
+            Toggle("Bypass key for comparison", isOn: Binding(
+                get: { filter.bypass },
+                set: { newValue in store.updateSelectedLayerChromaKey { $0.bypass = newValue } }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .help("Temporarily disable the key to compare against the original source.")
+
+            Spacer()
+        }
+
+        keyColorSection(filter: filter)
+
+        AdjustmentSlider("Threshold", value: filter.threshold, range: 0...1, defaultValue: 0.35) { newValue in
             store.updateSelectedLayerChromaKey { $0.threshold = newValue }
         }
-        slider("Smoothing", value: filter.smoothing, range: 0...0.5) { newValue in
+        AdjustmentSlider("Smoothing", value: filter.smoothing, range: 0...0.5, defaultValue: 0.08) { newValue in
             store.updateSelectedLayerChromaKey { $0.smoothing = newValue }
         }
-        slider("Edge Feather", value: filter.edgeFeather, range: 0...0.5) { newValue in
+        AdjustmentSlider("Edge Feather", value: filter.edgeFeather, range: 0...0.5, defaultValue: 0.0) { newValue in
             store.updateSelectedLayerChromaKey { $0.edgeFeather = newValue }
         }
-        slider("Spill Supp.", value: filter.spillSuppression, range: 0...2) { newValue in
+        AdjustmentSlider("Edge Despill", value: filter.edgeDespill, range: 0...2, defaultValue: 0.5) { newValue in
+            store.updateSelectedLayerChromaKey { $0.edgeDespill = newValue }
+        }
+        AdjustmentSlider("Spill Supp.", value: filter.spillSuppression, range: 0...2, defaultValue: 0.5) { newValue in
             store.updateSelectedLayerChromaKey { $0.spillSuppression = newValue }
         }
-        slider("Spill Range", value: filter.spillRange, range: 0...1) { newValue in
+        AdjustmentSlider("Spill Range", value: filter.spillRange, range: 0...1, defaultValue: 0.25) { newValue in
             store.updateSelectedLayerChromaKey { $0.spillRange = newValue }
+        }
+        AdjustmentSlider("Skin Protect", value: filter.skinToneProtection, range: 0...1, defaultValue: 0.3) { newValue in
+            store.updateSelectedLayerChromaKey { $0.skinToneProtection = newValue }
         }
 
         Divider()
 
+        backgroundSection(filter: filter)
+    }
+
+    @ViewBuilder
+    private func keyColorSection(filter: ChromaKeyFilter) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Key Colors")
+                    .font(.caption)
+                Spacer()
+                Text("\(filter.keyColors.count)/4")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(0..<filter.keyColors.count, id: \.self) { index in
+                HStack {
+                    Text("Color \(index + 1)")
+                        .font(.caption2)
+                    Spacer()
+                    ColorPicker("", selection: Binding(
+                        get: { Color(rgb: filter.keyColors[index]) },
+                        set: { newColor in
+                            let rgb = RGBColor(color: newColor)
+                            store.updateSelectedLayerChromaKey { filter in
+                                guard index < filter.keyColors.count else { return }
+                                filter.keyColors[index] = rgb
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 44)
+
+                    if filter.keyColors.count > 1 {
+                        Button {
+                            store.updateSelectedLayerChromaKey { filter in
+                                guard index < filter.keyColors.count else { return }
+                                filter.keyColors.remove(at: index)
+                            }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove this key color")
+                    }
+                }
+            }
+
+            if filter.keyColors.count < 4 {
+                Button {
+                    store.updateSelectedLayerChromaKey { filter in
+                        let base = filter.keyColors.first ?? RGBColor(r: 0, g: 1, b: 0)
+                        filter.keyColors.append(base)
+                    }
+                } label: {
+                    Label("Add Key Color", systemImage: "plus.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .padding(.top, 2)
+            }
+
+            Text("Add extra colors to sample green-screen highlights and shadows.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func backgroundSection(filter: ChromaKeyFilter) -> some View {
         HStack {
             Text("Background")
                 .font(.caption.bold())
@@ -113,37 +215,26 @@ struct ChromaKeyControlsView: View {
                 .buttonStyle(.borderless)
             }
         } else {
-            Button {
-                isPickingBackground = true
-            } label: {
-                Label("Choose Image or Video…", systemImage: "photo")
+            HStack(spacing: 8) {
+                Button {
+                    isPickingBackground = true
+                } label: {
+                    Label("Image/Video…", systemImage: "photo")
+                }
+                .font(.caption)
+
+                Button {
+                    isPickingSlideshow = true
+                } label: {
+                    Label("Slideshow…", systemImage: "photo.stack")
+                }
+                .font(.caption)
             }
-            .font(.caption)
         }
 
         Text("When no background is chosen, the keyed area is transparent.")
             .font(.caption2)
             .foregroundStyle(.secondary)
-    }
-
-    private func slider(
-        _ label: String,
-        value: Double,
-        range: ClosedRange<Double>,
-        onChange: @escaping (Double) -> Void
-    ) -> some View {
-        HStack {
-            Text(label)
-                .font(.caption)
-                .frame(width: 90, alignment: .leading)
-            Slider(value: Binding(
-                get: { value },
-                set: { onChange($0) }
-            ), in: range)
-            Text("\(value, specifier: "%.2f")")
-                .font(.caption.monospacedDigit())
-                .frame(width: 36, alignment: .trailing)
-        }
     }
 }
 

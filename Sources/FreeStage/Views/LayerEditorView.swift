@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LayerEditorView: View {
     @Environment(ShowStore.self) private var store
@@ -64,6 +65,9 @@ struct LayerEditorView: View {
                             }
                             if store.selectedLayerPlaylist != nil {
                                 PlaylistControlsView()
+                            }
+                            if isFacePuppetSource(store.selectedLayer?.source) {
+                                FacePuppetControlsView()
                             }
 
                             FilterEditorView()
@@ -155,6 +159,8 @@ struct LayerEditorView: View {
         Menu {
             Button("Camera…") { isAddingCamera = true }
             Button("Screen…") { isAddingScreen = true }
+            Button("Face Puppet…") { beginAddingFacePuppet() }
+            Button("Face Puppet Mesh…") { beginAddingFacePuppetMesh() }
             Button("Color") { addLayer(source: .color(.green), name: "Color") }
             Button("Text") { addLayer(source: .text(TextSource()), name: "Text") }
             Button("Slideshow…") { isAddingSlideshow = true }
@@ -186,10 +192,73 @@ struct LayerEditorView: View {
         store.selectLayer(id: layer.id)
     }
 
+    private func beginAddingFacePuppet() {
+        let devices = CameraDevice.discover()
+        guard let first = devices.first else { return }
+        guard let defaultURL = Bundle.main.url(forResource: "default_puppet", withExtension: "png"),
+              let localURL = copyPuppetImageToAppSupport(from: defaultURL) else { return }
+        captureManager?.startCapture(uniqueID: first.uniqueID)
+        addLayer(
+            source: .facePuppetAnchored(
+                cameraID: first.uniqueID,
+                puppetImageURL: localURL,
+                anchorMap: nil
+            ),
+            name: "Face Puppet"
+        )
+    }
+
+    private func beginAddingFacePuppetMesh() {
+        let devices = CameraDevice.discover()
+        guard let first = devices.first else { return }
+        captureManager?.startCapture(uniqueID: first.uniqueID)
+        addLayer(
+            source: .facePuppetMesh(cameraID: first.uniqueID, anchorMap: nil),
+            name: "Face Puppet Mesh"
+        )
+    }
+
+    private func copyPuppetImageToAppSupport(from url: URL) -> URL? {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+        do {
+            guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return nil
+            }
+            let directory = support.appendingPathComponent("PuppetImages", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(url.lastPathComponent)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: url, to: destination)
+            return destination
+        } catch {
+            return nil
+        }
+    }
+
+    private func isFacePuppetSource(_ source: Source?) -> Bool {
+        switch source {
+        case .facePuppet, .facePuppetAnchored, .facePuppetMesh:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func layerRow(layer: Layer, isGlobal: Bool) -> some View {
         HStack {
-            Image(systemName: layer.isVisible ? "eye" : "eye.slash")
-                .foregroundStyle(.secondary)
+            Button {
+                store.setLayerVisible(id: layer.id, isVisible: !layer.isVisible)
+            } label: {
+                Image(systemName: layer.isVisible ? "eye" : "eye.slash")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(layer.isVisible ? "Hide layer" : "Show layer")
+
             Text(layer.name)
                 .lineLimit(1)
             if isGlobal {

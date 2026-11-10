@@ -102,12 +102,15 @@ private struct LayerParams {
 private struct FilterParams {
     var flags: UInt32
     var keyColorCount: UInt32
+    var _pad0: SIMD2<Float>
     var keyColors: KeyColorArray
     var keyThreshold: Float
     var keySmoothing: Float
     var keyEdgeFeather: Float
     var keySpillAmount: Float
     var keySpillRange: Float
+    var keyEdgeDespill: Float
+    var keySkinProtection: Float
     var ccBrightness: Float
     var ccContrast: Float
     var ccSaturation: Float
@@ -121,6 +124,7 @@ private struct FilterParams {
     init(layer: Layer) {
         var flags: UInt32 = 0
         var keyColorCount: UInt32 = 0
+        let _pad0: SIMD2<Float> = .zero
         var keyColors = KeyColorArray(
             SIMD4<Float>(0, 0, 0, 1), SIMD4<Float>(0, 0, 0, 1),
             SIMD4<Float>(0, 0, 0, 1), SIMD4<Float>(0, 0, 0, 1)
@@ -130,6 +134,8 @@ private struct FilterParams {
         var keyEdgeFeather: Float = 0.0
         var keySpillAmount: Float = 0.5
         var keySpillRange: Float = 0.25
+        var keyEdgeDespill: Float = 0.5
+        var keySkinProtection: Float = 0.3
         var ccBrightness: Float = 0.0
         var ccContrast: Float = 1.0
         var ccSaturation: Float = 1.0
@@ -142,17 +148,22 @@ private struct FilterParams {
         for filter in layer.filters {
             switch filter {
             case .chromaKey(let f):
-                flags |= 2
-                let count = min(f.keyColors.count, 4)
+                let colors = f.keyColors.isEmpty ? [RGBColor(r: 0, g: 1, b: 0)] : f.keyColors
+                let count = max(min(colors.count, 4), 1)
                 keyColorCount = UInt32(count)
-                keyColors = makeKeyColorArray(from: f.keyColors)
+                keyColors = makeKeyColorArray(from: colors)
                 keyThreshold = Float(f.threshold)
                 keySmoothing = Float(f.smoothing)
                 keyEdgeFeather = Float(f.edgeFeather)
                 keySpillAmount = Float(f.spillSuppression)
                 keySpillRange = Float(f.spillRange)
-                if f.backgroundSource != nil {
-                    flags |= 4
+                keyEdgeDespill = Float(f.edgeDespill)
+                keySkinProtection = Float(f.skinToneProtection)
+                if f.isEnabled && !f.bypass {
+                    flags |= 2
+                    if f.backgroundSource != nil {
+                        flags |= 4
+                    }
                 }
             case .colorCorrection(let f):
                 flags |= 1
@@ -171,12 +182,15 @@ private struct FilterParams {
 
         self.flags = flags
         self.keyColorCount = keyColorCount
+        self._pad0 = _pad0
         self.keyColors = keyColors
         self.keyThreshold = keyThreshold
         self.keySmoothing = keySmoothing
         self.keyEdgeFeather = keyEdgeFeather
         self.keySpillAmount = keySpillAmount
         self.keySpillRange = keySpillRange
+        self.keyEdgeDespill = keyEdgeDespill
+        self.keySkinProtection = keySkinProtection
         self.ccBrightness = ccBrightness
         self.ccContrast = ccContrast
         self.ccSaturation = ccSaturation

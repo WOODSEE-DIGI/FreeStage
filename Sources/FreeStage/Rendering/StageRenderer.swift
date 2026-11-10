@@ -16,12 +16,17 @@ final class StageRenderer: @unchecked Sendable {
     private let commandQueue: MTLCommandQueue
     private let layerRenderer: LayerRenderer
     private let clearPipelineState: MTLComputePipelineState
+    private let blitPipelineState: MTLComputePipelineState
     private let sourceRegistry: SourceRendererRegistry
     /// Cache of already-decoded image textures keyed by source, so still
     /// images used as backgrounds (or layers) aren't re-decoded every frame.
     private let imageCache = ImageTextureCache()
 
-    init(captureManager: CameraCaptureManager) throws {
+    init(
+        captureManager: CameraCaptureManager,
+        screenCaptureManager: ScreenCaptureManager,
+        trackingService: FacePuppetTrackingService? = nil
+    ) throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw StageRendererError.noDevice
         }
@@ -31,7 +36,11 @@ final class StageRenderer: @unchecked Sendable {
         self.device = device
         self.commandQueue = commandQueue
         self.layerRenderer = try LayerRenderer(device: device)
-        self.sourceRegistry = SourceRendererRegistry(captureManager: captureManager)
+        self.sourceRegistry = SourceRendererRegistry(
+            captureManager: captureManager,
+            screenCaptureManager: screenCaptureManager,
+            trackingService: trackingService
+        )
 
         // Compile the clear pipeline once; recompiling it per frame is very costly.
         let library = try device.makeDefaultLibrary(bundle: Bundle(for: BundleFinder.self))
@@ -39,6 +48,11 @@ final class StageRenderer: @unchecked Sendable {
             throw StageRendererError.kernelNotFound
         }
         self.clearPipelineState = try device.makeComputePipelineState(function: clearFunction)
+
+        guard let blitFunction = library.makeFunction(name: "blitScaled") else {
+            throw StageRendererError.kernelNotFound
+        }
+        self.blitPipelineState = try device.makeComputePipelineState(function: blitFunction)
     }
 
     /// Encode the scene composite into the *provided* command buffer. The caller
@@ -104,6 +118,25 @@ final class StageRenderer: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// Blit a source texture into a destination texture of a different size.
+    /// Used to present the program output onto the on-screen drawable.
+    func blit(sourceTexture: MTLTexture, destinationTexture: MTLTexture, commandBuffer: MTLCommandBuffer) throws {
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            throw StageRendererError.encodeFailed
+        }
+        encoder.setComputePipelineState(blitPipelineState)
+        encoder.setTexture(sourceTexture, index: 0)
+        encoder.setTexture(destinationTexture, index: 1)
+        let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
+        let threadgroups = MTLSize(
+            width: (destinationTexture.width + threadgroupSize.width - 1) / threadgroupSize.width,
+            height: (destinationTexture.height + threadgroupSize.height - 1) / threadgroupSize.height,
+            depth: 1
+        )
+        encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
+        encoder.endEncoding()
     }
 
     /// Clear the output texture to transparent black. Also used by the view

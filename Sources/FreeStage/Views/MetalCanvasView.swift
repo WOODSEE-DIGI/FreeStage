@@ -7,6 +7,8 @@
 
 import SwiftUI
 import MetalKit
+import CoreVideo
+import CoreMedia
 
 /// Rolling FPS meter updated by the render loop and observed by the monitor
 /// footer. Updates are throttled to ~2 Hz so SwiftUI isn't flooded.
@@ -42,7 +44,12 @@ struct MetalCanvasView: NSViewRepresentable {
     var scene: Scene?
     var globalLayers: [Layer]
     var captureManager: CameraCaptureManager
+    var screenCaptureManager: ScreenCaptureManager
     var fpsCounter: FpsCounter?
+    var virtualCamera: VirtualCameraOutputService?
+    var recordingService: RecordingService?
+    var streamingService: StreamingService?
+    var trackingService: FacePuppetTrackingService?
 
     func makeNSView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -59,10 +66,21 @@ struct MetalCanvasView: NSViewRepresentable {
     func updateNSView(_ nsView: MTKView, context: Context) {
         context.coordinator.scene = scene
         context.coordinator.globalLayers = globalLayers
+        context.coordinator.virtualCamera = virtualCamera
+        context.coordinator.recordingService = recordingService
+        context.coordinator.streamingService = streamingService
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(captureManager: captureManager, fpsCounter: fpsCounter)
+        Coordinator(
+            captureManager: captureManager,
+            screenCaptureManager: screenCaptureManager,
+            fpsCounter: fpsCounter,
+            virtualCamera: virtualCamera,
+            recordingService: recordingService,
+            streamingService: streamingService,
+            trackingService: trackingService
+        )
     }
 
     final class Coordinator: NSObject, MTKViewDelegate {
@@ -70,18 +88,66 @@ struct MetalCanvasView: NSViewRepresentable {
         private let renderer: StageRenderer
         private let commandQueue: MTLCommandQueue
         private let fpsCounter: FpsCounter?
+        private let syphon: SyphonOutputService?
+        var virtualCamera: VirtualCameraOutputService?
+        var recordingService: RecordingService?
+        var streamingService: StreamingService?
+        private let textureCache: CVMetalTextureCache
+        private let programPixelBufferPool: CVPixelBufferPool
+        private let programPixelBufferAuxAttributes: NSDictionary
+        private var recordingPixelBufferPool: CVPixelBufferPool?
+        private var recordingPoolSize: CGSize = .zero
         var scene: Scene?
         var globalLayers: [Layer] = []
 
-        init(captureManager: CameraCaptureManager, fpsCounter: FpsCounter?) {
+        init(
+            captureManager: CameraCaptureManager,
+            screenCaptureManager: ScreenCaptureManager,
+            fpsCounter: FpsCounter?,
+            virtualCamera: VirtualCameraOutputService?,
+            recordingService: RecordingService?,
+            streamingService: StreamingService?,
+            trackingService: FacePuppetTrackingService?
+        ) {
             guard let device = MTLCreateSystemDefaultDevice(),
                   let commandQueue = device.makeCommandQueue() else {
                 fatalError("Metal is not available on this Mac.")
             }
             self.device = device
             self.commandQueue = commandQueue
-            self.renderer = try! StageRenderer(captureManager: captureManager)
+            self.renderer = try! StageRenderer(
+                captureManager: captureManager,
+                screenCaptureManager: screenCaptureManager,
+                trackingService: trackingService
+            )
+            self.syphon = SyphonOutputService(device: device)
+            self.virtualCamera = virtualCamera
+            self.recordingService = recordingService
+            self.streamingService = streamingService
             self.fpsCounter = fpsCounter
+
+            var cache: CVMetalTextureCache?
+            CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
+            guard let textureCache = cache else {
+                fatalError("Failed to create CVMetalTextureCache")
+            }
+            self.textureCache = textureCache
+
+            let programPixelBufferAttributes: NSDictionary = [
+                kCVPixelBufferWidthKey: freeStageCameraWidth,
+                kCVPixelBufferHeightKey: freeStageCameraHeight,
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferMetalCompatibilityKey: true,
+                kCVPixelBufferIOSurfacePropertiesKey: [:]
+            ]
+            var programPool: CVPixelBufferPool?
+            let programErr = CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, programPixelBufferAttributes, &programPool)
+            guard programErr == noErr, let programPool else {
+                fatalError("Failed to create CVPixelBufferPool: \(programErr)")
+            }
+            self.programPixelBufferPool = programPool
+            self.programPixelBufferAuxAttributes = [kCVPixelBufferPoolAllocationThresholdKey: 5]
+
             super.init()
         }
 
@@ -92,23 +158,139 @@ struct MetalCanvasView: NSViewRepresentable {
                   let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
             do {
+                // Always render the program output to a fixed-size pixel buffer
+                // so the virtual camera and recording get a stable resolution.
+                guard let programPixelBuffer = createPixelBuffer() else {
+                    throw MetalCanvasError.pixelBufferTextureCreationFailed
+                }
+                guard let programTexture = texture(from: programPixelBuffer) else {
+                    throw MetalCanvasError.pixelBufferTextureCreationFailed
+                }
+
                 if let scene {
                     try renderer.render(
                         scene: scene,
                         globalLayers: globalLayers,
-                        into: drawable.texture,
+                        into: programTexture,
                         commandBuffer: commandBuffer
                     )
                 } else {
-                    // No scene: clear the drawable so it doesn't show stale content.
-                    try renderer.clear(outputTexture: drawable.texture, commandBuffer: commandBuffer)
+                    try renderer.clear(outputTexture: programTexture, commandBuffer: commandBuffer)
                 }
+
+                // Present the program output on the on-screen drawable.
+                try renderer.blit(sourceTexture: programTexture, destinationTexture: drawable.texture, commandBuffer: commandBuffer)
+
+                syphon?.publish(programTexture, commandBuffer: commandBuffer)
                 commandBuffer.present(drawable)
                 commandBuffer.commit()
+
+                // Hand the program frame to outputs after the GPU is done.
+                commandBuffer.waitUntilCompleted()
+                let timestamp = CMClockGetTime(CMClockGetHostTimeClock())
+                DispatchQueue.main.async { [weak self] in
+                    self?.virtualCamera?.enqueue(programPixelBuffer)
+                    self?.recordingService?.appendVideo(pixelBuffer: programPixelBuffer, presentationTime: timestamp)
+                    self?.streamingService?.appendVideo(pixelBuffer: programPixelBuffer, presentationTime: timestamp)
+                }
+
+                // If recording is active, produce a separately scaled buffer at the recording resolution.
+                if let recordingService = recordingService, recordingService.isRecording {
+                    scaleAndAppendRecording(programPixelBuffer: programPixelBuffer, at: timestamp)
+                }
+
                 fpsCounter?.tick()
             } catch {
                 print("Render error: \(error)")
             }
         }
+
+        private func scaleAndAppendRecording(programPixelBuffer: CVPixelBuffer, at timestamp: CMTime) {
+            guard let recordingService = recordingService else { return }
+            let size = recordingService.recordingSize
+            guard size.width > 0, size.height > 0 else { return }
+
+            guard let pool = ensureRecordingPool(size: size) else { return }
+
+            var scaledPixelBuffer: CVPixelBuffer?
+            let auxAttributes: NSDictionary = [kCVPixelBufferPoolAllocationThresholdKey: 3]
+            let createErr = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(
+                kCFAllocatorDefault,
+                pool,
+                auxAttributes,
+                &scaledPixelBuffer
+            )
+            guard createErr == noErr, let scaledPixelBuffer else { return }
+
+            guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                  let programTexture = texture(from: programPixelBuffer),
+                  let scaledTexture = texture(from: scaledPixelBuffer) else { return }
+
+            do {
+                try renderer.blit(sourceTexture: programTexture, destinationTexture: scaledTexture, commandBuffer: commandBuffer)
+                commandBuffer.commit()
+                commandBuffer.waitUntilCompleted()
+                recordingService.appendVideo(pixelBuffer: scaledPixelBuffer, presentationTime: timestamp)
+            } catch {
+                print("Recording scale error: \(error)")
+            }
+        }
+
+        private func createPixelBuffer() -> CVPixelBuffer? {
+            var pixelBuffer: CVPixelBuffer?
+            let err = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(
+                kCFAllocatorDefault,
+                programPixelBufferPool,
+                programPixelBufferAuxAttributes,
+                &pixelBuffer
+            )
+            guard err == noErr else { return nil }
+            return pixelBuffer
+        }
+
+        private func ensureRecordingPool(size: CGSize) -> CVPixelBufferPool? {
+            if recordingPoolSize == size, let pool = recordingPixelBufferPool {
+                return pool
+            }
+            recordingPixelBufferPool = nil
+            recordingPoolSize = .zero
+
+            let attributes: NSDictionary = [
+                kCVPixelBufferWidthKey: Int(size.width),
+                kCVPixelBufferHeightKey: Int(size.height),
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferMetalCompatibilityKey: true,
+                kCVPixelBufferIOSurfacePropertiesKey: [:]
+            ]
+            var pool: CVPixelBufferPool?
+            let err = CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attributes, &pool)
+            guard err == noErr, let pool else { return nil }
+            recordingPixelBufferPool = pool
+            recordingPoolSize = size
+            return pool
+        }
+
+        private func texture(from pixelBuffer: CVPixelBuffer) -> MTLTexture? {
+            var cvTexture: CVMetalTexture?
+            let width = CVPixelBufferGetWidth(pixelBuffer)
+            let height = CVPixelBufferGetHeight(pixelBuffer)
+            let status = CVMetalTextureCacheCreateTextureFromImage(
+                nil,
+                textureCache,
+                pixelBuffer,
+                nil,
+                .bgra8Unorm,
+                width,
+                height,
+                0,
+                &cvTexture
+            )
+            guard status == kCVReturnSuccess, let cvTexture else { return nil }
+            return CVMetalTextureGetTexture(cvTexture)
+        }
     }
+}
+
+enum MetalCanvasError: Error {
+    case pixelBufferTextureCreationFailed
 }

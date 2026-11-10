@@ -32,10 +32,19 @@ struct SourceRendererRegistry: Sendable {
     private let mediaRenderer = MediaSourceRenderer()
     private let cameraRenderer: CameraSourceRenderer
     private let screenRenderer: ScreenSourceRenderer
+    private let facePuppetRenderer: FacePuppetSourceRenderer
 
-    init(captureManager: CameraCaptureManager, screenCaptureManager: ScreenCaptureManager) {
+    init(
+        captureManager: CameraCaptureManager,
+        screenCaptureManager: ScreenCaptureManager,
+        trackingService: FacePuppetTrackingService? = nil
+    ) {
         self.cameraRenderer = CameraSourceRenderer(captureManager: captureManager)
         self.screenRenderer = ScreenSourceRenderer(manager: screenCaptureManager)
+        self.facePuppetRenderer = FacePuppetSourceRenderer(
+            captureManager: captureManager,
+            trackingService: trackingService
+        )
     }
 
     func render(
@@ -62,6 +71,8 @@ struct SourceRendererRegistry: Sendable {
             return try cameraRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .screen:
             return try screenRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .facePuppet, .facePuppetAnchored, .facePuppetMesh:
+            return try facePuppetRenderer.render(source: source, device: device, commandQueue: commandQueue)
         default:
             return nil
         }
@@ -90,6 +101,9 @@ extension Source {
         case imageLogoBug
         case ticker
         case playlist
+        case facePuppet
+        case facePuppetAnchored
+        case facePuppetMesh
     }
 
     var kind: Kind {
@@ -114,6 +128,9 @@ extension Source {
         case .imageLogoBug: return .imageLogoBug
         case .ticker: return .ticker
         case .playlist: return .playlist
+        case .facePuppet: return .facePuppet
+        case .facePuppetAnchored: return .facePuppetAnchored
+        case .facePuppetMesh: return .facePuppetMesh
         }
     }
 }

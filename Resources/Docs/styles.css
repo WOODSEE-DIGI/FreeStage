@@ -1,0 +1,217 @@
+:root {
+    --bg: #0d0d0d;
+    --surface: #1a1a1a;
+    --surface-2: #262626;
+    --text: #f0f0f0;
+    --text-secondary: #a0a0a0;
+    --accent: #0a84ff;
+    --accent-dim: rgba(10, 132, 255, 0.15);
+    --green: #32d74b;
+    --red: #ff453a;
+    --orange: #ff9f0a;
+    --border: #333;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+}
+
+.container {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 24px;
+}
+
+header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+}
+
+header h1 {
+    margin: 0 0 8px;
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+header p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 17px;
+}
+
+nav {
+    position: sticky;
+    top: 0;
+    background: rgba(13, 13, 13, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 0;
+    margin-bottom: 32px;
+    z-index: 10;
+}
+
+nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+nav a {
+    display: block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: 0.15s;
+}
+
+nav a:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+section {
+    margin-bottom: 48px;
+}
+
+section h2 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 16px;
+    color: var(--text);
+}
+
+section h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 28px 0 10px;
+    color: var(--text);
+}
+
+p {
+    margin: 0 0 14px;
+    color: var(--text-secondary);
+}
+
+strong {
+    color: var(--text);
+}
+
+ul, ol {
+    margin: 0 0 16px;
+    padding-left: 22px;
+    color: var(--text-secondary);
+}
+
+li {
+    margin-bottom: 8px;
+}
+
+code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text);
+}
+
+pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+}
+
+pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.tip {
+    background: var(--accent-dim);
+    border-left: 3px solid var(--accent);
+    padding: 14px 16px;
+    border-radius: 0 10px 10px 0;
+    margin-bottom: 16px;
+}
+
+.tip p:last-child {
+    margin-bottom: 0;
+}
+
+.keyboard {
+    display: inline-block;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--text);
+}
+
+.mode-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.mode-edit {
+    background: rgba(50, 215, 75, 0.15);
+    color: var(--green);
+}
+
+.mode-show {
+    background: rgba(255, 159, 10, 0.15);
+    color: var(--orange);
+}
+
+.mode-rec {
+    background: rgba(255, 69, 58, 0.15);
+    color: var(--red);
+}
+
+footer {
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+    margin-top: 48px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 24px 16px;
+    }
+    nav ul {
+        padding: 0 16px;
+    }
+}

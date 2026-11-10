@@ -154,9 +154,15 @@ static const UInt16 kObsbotVendorID = 0x3564;
 
     kr = (*_deviceInterface)->USBDeviceOpen(_deviceInterface);
     if (kr != KERN_SUCCESS) {
-        NSLog(@"[ObsbotIOKit] USBDeviceOpen failed: 0x%08x", kr);
-        (*_deviceInterface)->Release(_deviceInterface);
-        _deviceInterface = NULL;
+        NSLog(@"[ObsbotIOKit] USBDeviceOpen failed: 0x%08x, trying USBDeviceOpenSeize", kr);
+        kr = (*_deviceInterface)->USBDeviceOpenSeize(_deviceInterface);
+        if (kr != KERN_SUCCESS) {
+            NSLog(@"[ObsbotIOKit] USBDeviceOpenSeize also failed: 0x%08x", kr);
+            (*_deviceInterface)->Release(_deviceInterface);
+            _deviceInterface = NULL;
+        } else {
+            NSLog(@"[ObsbotIOKit] USBDeviceOpenSeize succeeded");
+        }
     }
     return kr;
 }

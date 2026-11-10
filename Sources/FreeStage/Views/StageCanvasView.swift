@@ -11,6 +11,11 @@ import SwiftUI
 struct StageMonitorView: View {
     @Environment(ShowStore.self) private var store
     @Environment(\.cameraCaptureManager) private var captureManager
+    @Environment(\.screenCaptureManager) private var screenCaptureManager
+    @Environment(\.virtualCameraOutputService) private var virtualCamera
+    @Environment(\.recordingService) private var recordingService
+    @Environment(\.streamingService) private var streamingService
+    @Environment(\.facePuppetTrackingService) private var trackingService
 
     let scene: Scene?
     let title: String
@@ -22,12 +27,17 @@ struct StageMonitorView: View {
         VStack(spacing: 0) {
             monitorHeader
 
-            if let captureManager {
+            if let captureManager, let screenCaptureManager {
                 MetalCanvasView(
                     scene: scene,
                     globalLayers: store.show.globalLayers,
                     captureManager: captureManager,
-                    fpsCounter: fpsCounter
+                    screenCaptureManager: screenCaptureManager,
+                    fpsCounter: fpsCounter,
+                    virtualCamera: isLive ? virtualCamera : nil,
+                    recordingService: isLive ? recordingService : nil,
+                    streamingService: isLive ? streamingService : nil,
+                    trackingService: trackingService
                 )
                 .aspectRatio(16 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,7 +53,7 @@ struct StageMonitorView: View {
                 Color.black
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(
-                        Text("Camera capture manager not available")
+                        Text("Capture managers not available")
                             .foregroundStyle(.secondary)
                     )
             }

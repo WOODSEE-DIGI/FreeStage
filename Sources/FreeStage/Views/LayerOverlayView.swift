@@ -19,12 +19,24 @@ struct LayerOverlayView: View {
                 ZStack {
                     boundingBox(frame: frame, layer: layer, size: geometry.size)
                     resizeHandle(frame: frame, layer: layer, size: geometry.size)
+                    if isFacePuppetSource(layer.source) {
+                        FacePuppetAnchorOverlayView()
+                    }
                 }
             }
         }
     }
 
     // MARK: - Frame math
+
+    private func isFacePuppetSource(_ source: Source) -> Bool {
+        switch source {
+        case .facePuppet, .facePuppetAnchored, .facePuppetMesh:
+            return true
+        default:
+            return false
+        }
+    }
 
     private func frame(for layer: Layer, in size: CGSize) -> CGRect {
         let width = size.width

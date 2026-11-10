@@ -1,4 +1,8 @@
 name: FreeStage
+packages:
+  StableDiffusion:
+    url: https://github.com/apple-aiml-research/ml-stable-diffusion
+    from: 1.1.1
 targets:
   FreeStageTests:
     type: bundle.unit-test
@@ -8,19 +12,52 @@ targets:
       - FreeStageTests
     dependencies:
       - target: FreeStage
+      - framework: Frameworks/Syphon.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.woodseedigi.FreeStageTests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
+        FRAMEWORK_SEARCH_PATHS:
+          - Frameworks
   FreeStage:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
     sources:
       - Sources/FreeStage
+      - path: Vendor/MediaPipeFaceMesh/src
+      - path: Vendor/MediaPipeFaceMesh/models/face_blendshapes.tflite
+        buildPhase: resources
+      - path: Vendor/MediaPipeFaceMesh/models/face_detection_short_range.tflite
+        buildPhase: resources
+      - path: Vendor/MediaPipeFaceMesh/models/face_landmark_with_attention.tflite
+        buildPhase: resources
+      - path: Workflows/puppet_skin_texture.json
+        buildPhase: resources
+      - path: Workflows/puppet_skin_texture_img2img.json
+        buildPhase: resources
+      - path: Workflows/puppet_uv_template.png
+        buildPhase: resources
+      - path: Workflows/puppet_texture_example.png
+        buildPhase: resources
+      - path: Workflows/default_puppet.png
+        buildPhase: resources
+      - path: Workflows/wrap_panda.png
+        buildPhase: resources
+      - path: Workflows/wrap_red_panda.png
+        buildPhase: resources
+      - path: Workflows/wrap_fox.png
+        buildPhase: resources
     resources:
       - Resources
+      - Workflows
+    dependencies:
+      - framework: Frameworks/Syphon.framework
+      - sdk: Vision.framework
+      - framework: Vendor/MediaPipeFaceMesh/TensorFlowLiteC.xcframework
+        embed: false
+      - package: StableDiffusion
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.woodseedigi.FreeStage
@@ -31,13 +68,20 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_OBJC_BRIDGING_HEADER: Sources/FreeStage/FreeStage-Bridging-Header.h
+        CODE_SIGN_ENTITLEMENTS: Resources/FreeStage.entitlements
         OTHER_SWIFT_FLAGS:
           - -warnings-as-errors
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        CLANG_CXX_LIBRARY: libc++
+        USER_HEADER_SEARCH_PATHS:
+          - Vendor/MediaPipeFaceMesh/src
+        OTHER_LDFLAGS:
+          - -lc++
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "-"
-          CODE_SIGNING_REQUIRED: NO
-          CODE_SIGNING_ALLOWED: NO
+          CODE_SIGNING_REQUIRED: YES
+          CODE_SIGNING_ALLOWED: YES
         Release:
           CODE_SIGN_IDENTITY: "-"
           CODE_SIGNING_REQUIRED: NO
@@ -53,6 +97,8 @@ targets:
         NSCameraUsageDescription: FreeStage needs camera access to use webcams and capture devices in scenes.
         NSMicrophoneUsageDescription: FreeStage needs microphone access to capture audio for recording and streaming.
         NSCameraReactionIndicatorEnabled: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSMainStoryboardFile: ""
         UILaunchStoryboardName: ""
         NSApplicationRequiresARC: true

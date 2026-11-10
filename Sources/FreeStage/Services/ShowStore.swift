@@ -357,6 +357,10 @@ final class ShowStore: NSObject {
         }
     }
 
+    func setLayerVisible(id: UUID, isVisible: Bool) {
+        _ = mutateLayer(id: id) { $0.isVisible = isVisible }
+    }
+
     // MARK: - Filters
 
     func addFilterToSelectedLayer(_ filter: Filter) {

@@ -31,6 +31,9 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     case imageLogoBug(ImageLogoBugSource)
     case ticker(TickerSource)
     case playlist(PlaylistSource)
+    case facePuppet(cameraID: String, puppetImageURL: URL)
+    case facePuppetAnchored(cameraID: String, puppetImageURL: URL, anchorMap: FacePuppetAnchorMap?)
+    case facePuppetMesh(cameraID: String, anchorMap: FacePuppetAnchorMap?)
 
     var id: String {
         switch self {
@@ -53,7 +56,12 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .countdownTimer(let c): return "countdownTimer:\(c.id)"
         case .imageLogoBug(let i): return "imageLogoBug:\(i.id)"
         case .ticker(let t): return "ticker:\(t.id)"
-        case .playlist(let p): return "playlist:\(p.id)"
+        case .playlist(let p): return "playlist:\(p.items.first?.title ?? "")"
+        case .facePuppet(let cameraID, let url): return "facePuppet:\(cameraID):\(url.path)"
+        case .facePuppetAnchored(let cameraID, let url, let anchorMap):
+            return "facePuppetAnchored:\(cameraID):\(url.path):\(anchorMap?.offsets.count ?? 0)"
+        case .facePuppetMesh(let cameraID, let anchorMap):
+            return "facePuppetMesh:\(cameraID):\(anchorMap?.offsets.count ?? 0)"
         }
     }
 
@@ -79,6 +87,50 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .imageLogoBug(let i): return i.imageURL?.deletingPathExtension().lastPathComponent ?? "Logo Bug"
         case .ticker(let t): return t.items.first ?? "Ticker"
         case .playlist(let p): return p.items.first?.title ?? "Playlist"
+        case .facePuppet: return "Face Puppet"
+        case .facePuppetAnchored: return "Face Puppet"
+        case .facePuppetMesh: return "Face Puppet Mesh"
+        }
+    }
+
+    /// The anchor offsets for face-puppet sources, if any.
+    var facePuppetAnchorMap: FacePuppetAnchorMap? {
+        switch self {
+        case .facePuppetAnchored(_, _, let anchorMap),
+             .facePuppetMesh(_, let anchorMap):
+            return anchorMap
+        default:
+            return nil
+        }
+    }
+
+    /// Return a copy of this source with the offset for one anchor landmark
+    /// updated. Plain `.facePuppet` sources are promoted to `.facePuppetAnchored`.
+    func updatingAnchorOffset(index: Int, offset: CGPoint) -> Source {
+        switch self {
+        case .facePuppet(let cameraID, let puppetImageURL):
+            return .facePuppetAnchored(
+                cameraID: cameraID,
+                puppetImageURL: puppetImageURL,
+                anchorMap: FacePuppetAnchorMap(offsets: [index: offset])
+            )
+        case .facePuppetAnchored(let cameraID, let puppetImageURL, let anchorMap):
+            var offsets = anchorMap?.offsets ?? [:]
+            offsets[index] = offset
+            return .facePuppetAnchored(
+                cameraID: cameraID,
+                puppetImageURL: puppetImageURL,
+                anchorMap: FacePuppetAnchorMap(offsets: offsets)
+            )
+        case .facePuppetMesh(let cameraID, let anchorMap):
+            var offsets = anchorMap?.offsets ?? [:]
+            offsets[index] = offset
+            return .facePuppetMesh(
+                cameraID: cameraID,
+                anchorMap: FacePuppetAnchorMap(offsets: offsets)
+            )
+        default:
+            return self
         }
     }
 }

@@ -22,6 +22,7 @@ final class CameraCaptureManager: @unchecked Sendable {
     private let captureQueue = DispatchQueue(label: "com.woodseedigi.freestage.camera", qos: .userInteractive)
     private var sessions: [String: AVCaptureSession] = [:]
     private var textures: [String: MTLTexture] = [:]
+    private var pixelBuffers: [String: CVPixelBuffer] = [:]
     private var delegates: [String: CaptureDelegate] = [:]
     private let lock = NSLock()
 
@@ -126,11 +127,19 @@ final class CameraCaptureManager: @unchecked Sendable {
         }
     }
 
+    /// Get the latest pixel buffer for a camera, or nil if no frame has arrived yet.
+    func pixelBuffer(for uniqueID: String) -> CVPixelBuffer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return pixelBuffers[uniqueID]
+    }
+
     /// Stop capturing from the camera with the given uniqueID.
     func stopCapture(uniqueID: String) {
         lock.lock()
         let session = sessions.removeValue(forKey: uniqueID)
         textures.removeValue(forKey: uniqueID)
+        pixelBuffers.removeValue(forKey: uniqueID)
         delegates.removeValue(forKey: uniqueID)
         lock.unlock()
         session?.stopRunning()
@@ -144,6 +153,7 @@ final class CameraCaptureManager: @unchecked Sendable {
         let allIDs = Array(sessions.keys)
         sessions.removeAll()
         textures.removeAll()
+        pixelBuffers.removeAll()
         delegates.removeAll()
         lock.unlock()
         for session in allSessions {
@@ -198,6 +208,10 @@ final class CameraCaptureManager: @unchecked Sendable {
             withBytes: baseAddress,
             bytesPerRow: bytesPerRow
         )
+
+        lock.lock()
+        pixelBuffers[uniqueID] = buffer
+        lock.unlock()
 
         if !hadTexture {
             print("[FreeStage] First frame copied for \(uniqueID) \(width)x\(height)")

@@ -1,0 +1,20 @@
+#!/bin/sh
+# FreeStage pre-commit hook
+# Reminds contributors to update bundled documentation when UI/features change.
+
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^Sources/FreeStage/.*\.swift$' || true)
+STAGED_DOCS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^Resources/Docs/' || true)
+
+if [ -n "$STAGED_SWIFT" ] && [ -z "$STAGED_DOCS" ]; then
+    echo ""
+    echo "⚠️  FreeStage documentation reminder"
+    echo "   You are committing Swift source changes without updating Resources/Docs."
+    echo "   If your change affects the workspace, UI, or features, please update"
+    echo "   the bundled help documentation (Resources/Docs/index.html)."
+    echo ""
+    echo "   To bypass this reminder, commit with --no-verify."
+    echo ""
+    # Non-blocking: exit 0 allows the commit to proceed.
+fi
+
+exit 0

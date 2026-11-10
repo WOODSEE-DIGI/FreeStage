@@ -30,6 +30,7 @@ struct FreeStageApp: App {
     @State private var cueTriggerServer = CueTriggerServer()
     @State private var oscCueServer = OSCCueServer()
     @State private var streamingService = StreamingService()
+    @State private var facePuppetTrackingService = FacePuppetTrackingService()
     @StateObject private var virtualCamera = VirtualCameraOutputService()
     @State private var showScreenCapturePermissionAlert = false
 
@@ -71,6 +72,7 @@ struct FreeStageApp: App {
                 .environment(\.cueTriggerServer, cueTriggerServer)
                 .environment(\.oscCueServer, oscCueServer)
                 .environment(\.streamingService, streamingService)
+                .environment(\.facePuppetTrackingService, facePuppetTrackingService)
                 .alert("Screen Recording Permission Required", isPresented: $showScreenCapturePermissionAlert) {
                     Button("Open Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenRecording") {
@@ -263,6 +265,19 @@ struct FreeStageApp: App {
                 localhostOnly: appSettings.cueTriggerServerLocalhostOnly
             ) { cueID in
                 store.triggerCue(id: cueID)
+            } gimbal: { action in
+                switch action {
+                case .moveTo(let pan, let tilt):
+                    store.updateSelectedLayerGimbal(pan: pan, tilt: tilt)
+                case .recenter:
+                    store.updateSelectedLayerGimbal(pan: 0, tilt: 0)
+                case .nudge(let panDelta, let tiltDelta):
+                    let settings = store.selectedLayer?.cameraSettings ?? CameraSettings()
+                    store.updateSelectedLayerGimbal(
+                        pan: settings.gimbalPan + panDelta,
+                        tilt: settings.gimbalTilt + tiltDelta
+                    )
+                }
             }
         } catch {
             print("[FreeStage] Failed to start cue trigger server: \(error)")
@@ -292,6 +307,16 @@ struct FreeStageApp: App {
                     store.selectNext()
                 case .previous:
                     store.selectPrevious()
+                case .gimbalMoveTo(let pan, let tilt):
+                    store.updateSelectedLayerGimbal(pan: pan, tilt: tilt)
+                case .gimbalRecenter:
+                    store.updateSelectedLayerGimbal(pan: 0, tilt: 0)
+                case .gimbalNudge(let panDelta, let tiltDelta):
+                    let settings = store.selectedLayer?.cameraSettings ?? CameraSettings()
+                    store.updateSelectedLayerGimbal(
+                        pan: settings.gimbalPan + panDelta,
+                        tilt: settings.gimbalTilt + tiltDelta
+                    )
                 }
             }
         } catch {

@@ -61,6 +61,7 @@ struct FilterEditorView: View {
 struct FilterRowView: View {
     @Environment(ShowStore.self) private var store
     @State private var isPickingBackground = false
+    @State private var isPickingSlideshow = false
     let filter: Filter
 
     var body: some View {
@@ -120,38 +121,51 @@ struct FilterRowView: View {
                 filterLogger.error("fileImporter failed: \(error.localizedDescription)")
             }
         }
+        .sheet(isPresented: $isPickingSlideshow) {
+            SlideshowPickerSheet { slideshow in
+                store.updateChromaKeyFilter(id: filter.id) { $0.backgroundSource = .slideshow(slideshow) }
+            }
+        }
     }
 
     private func chromaKeyControls(filterID: String, filter: ChromaKeyFilter) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Key Color")
-                Spacer()
-                ColorPicker("", selection: Binding(
-                    get: { Color(rgb: filter.keyColor) },
-                    set: { newColor in
-                        let rgb = RGBColor(color: newColor)
-                        store.updateChromaKeyFilter(id: filterID) { $0.keyColor = rgb }
-                    }
+                Text("A / B")
+                    .font(.caption)
+                Toggle("Bypass key for comparison", isOn: Binding(
+                    get: { filter.bypass },
+                    set: { newValue in store.updateChromaKeyFilter(id: filterID) { $0.bypass = newValue } }
                 ))
-                .labelsHidden()
-                .frame(width: 60)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Temporarily disable the key to compare against the original source.")
+
+                Spacer()
             }
 
-            filterSlider("Threshold", value: filter.threshold, range: 0...1) { newValue in
+            keyColorControls(filterID: filterID, filter: filter)
+
+            AdjustmentSlider("Threshold", value: filter.threshold, range: 0...1, defaultValue: 0.35) { newValue in
                 store.updateChromaKeyFilter(id: filterID) { $0.threshold = newValue }
             }
-            filterSlider("Smoothing", value: filter.smoothing, range: 0...0.5) { newValue in
+            AdjustmentSlider("Smoothing", value: filter.smoothing, range: 0...0.5, defaultValue: 0.08) { newValue in
                 store.updateChromaKeyFilter(id: filterID) { $0.smoothing = newValue }
             }
-            filterSlider("Edge Feather", value: filter.edgeFeather, range: 0...0.5) { newValue in
+            AdjustmentSlider("Edge Feather", value: filter.edgeFeather, range: 0...0.5, defaultValue: 0.0) { newValue in
                 store.updateChromaKeyFilter(id: filterID) { $0.edgeFeather = newValue }
             }
-            filterSlider("Spill Supp.", value: filter.spillSuppression, range: 0...2) { newValue in
+            AdjustmentSlider("Edge Despill", value: filter.edgeDespill, range: 0...2, defaultValue: 0.5) { newValue in
+                store.updateChromaKeyFilter(id: filterID) { $0.edgeDespill = newValue }
+            }
+            AdjustmentSlider("Spill Supp.", value: filter.spillSuppression, range: 0...2, defaultValue: 0.5) { newValue in
                 store.updateChromaKeyFilter(id: filterID) { $0.spillSuppression = newValue }
             }
-            filterSlider("Spill Range", value: filter.spillRange, range: 0...1) { newValue in
+            AdjustmentSlider("Spill Range", value: filter.spillRange, range: 0...1, defaultValue: 0.25) { newValue in
                 store.updateChromaKeyFilter(id: filterID) { $0.spillRange = newValue }
+            }
+            AdjustmentSlider("Skin Protect", value: filter.skinToneProtection, range: 0...1, defaultValue: 0.3) { newValue in
+                store.updateChromaKeyFilter(id: filterID) { $0.skinToneProtection = newValue }
             }
 
             Divider()
@@ -177,12 +191,21 @@ struct FilterRowView: View {
                     .buttonStyle(.borderless)
                 }
             } else {
-                Button {
-                    isPickingBackground = true
-                } label: {
-                    Label("Choose Image or Video…", systemImage: "photo")
+                HStack(spacing: 8) {
+                    Button {
+                        isPickingBackground = true
+                    } label: {
+                        Label("Image/Video…", systemImage: "photo")
+                    }
+                    .font(.caption)
+
+                    Button {
+                        isPickingSlideshow = true
+                    } label: {
+                        Label("Slideshow…", systemImage: "photo.stack")
+                    }
+                    .font(.caption)
                 }
-                .font(.caption)
             }
 
             Text("When no background is chosen, the keyed area is transparent.")
@@ -191,30 +214,91 @@ struct FilterRowView: View {
         }
     }
 
+    private func keyColorControls(filterID: String, filter: ChromaKeyFilter) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Key Colors")
+                    .font(.caption)
+                Spacer()
+                Text("\(filter.keyColors.count)/4")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(0..<filter.keyColors.count, id: \.self) { index in
+                HStack {
+                    Text("Color \(index + 1)")
+                        .font(.caption2)
+                    Spacer()
+                    ColorPicker("", selection: Binding(
+                        get: { Color(rgb: filter.keyColors[index]) },
+                        set: { newColor in
+                            let rgb = RGBColor(color: newColor)
+                            store.updateChromaKeyFilter(id: filterID) { filter in
+                                guard index < filter.keyColors.count else { return }
+                                filter.keyColors[index] = rgb
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 44)
+
+                    if filter.keyColors.count > 1 {
+                        Button {
+                            store.updateChromaKeyFilter(id: filterID) { filter in
+                                guard index < filter.keyColors.count else { return }
+                                filter.keyColors.remove(at: index)
+                            }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+
+            if filter.keyColors.count < 4 {
+                Button {
+                    store.updateChromaKeyFilter(id: filterID) { filter in
+                        let base = filter.keyColors.first ?? RGBColor(r: 0, g: 1, b: 0)
+                        filter.keyColors.append(base)
+                    }
+                } label: {
+                    Label("Add Key Color", systemImage: "plus.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .padding(.top, 2)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
     private func colorCorrectionControls(filterID: String, filter: ColorCorrectionFilter) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            filterSlider("Exposure", value: filter.exposure, range: -3...3) { newValue in
+            AdjustmentSlider("Exposure", value: filter.exposure, range: -3...3, defaultValue: 0.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.exposure = newValue }
             }
-            filterSlider("Brightness", value: filter.brightness, range: -1...1) { newValue in
+            AdjustmentSlider("Brightness", value: filter.brightness, range: -1...1, defaultValue: 0.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.brightness = newValue }
             }
-            filterSlider("Contrast", value: filter.contrast, range: 0...2) { newValue in
+            AdjustmentSlider("Contrast", value: filter.contrast, range: 0...2, defaultValue: 1.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.contrast = newValue }
             }
-            filterSlider("Saturation", value: filter.saturation, range: 0...2) { newValue in
+            AdjustmentSlider("Saturation", value: filter.saturation, range: 0...2, defaultValue: 1.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.saturation = newValue }
             }
-            filterSlider("Hue", value: filter.hue, range: -Double.pi...Double.pi) { newValue in
+            AdjustmentSlider("Hue", value: filter.hue, range: -Double.pi...Double.pi, defaultValue: 0.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.hue = newValue }
             }
-            filterSlider("Gamma", value: filter.gamma, range: 0.1...3) { newValue in
+            AdjustmentSlider("Gamma", value: filter.gamma, range: 0.1...3, defaultValue: 1.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.gamma = newValue }
             }
-            filterSlider("Temperature", value: filter.temperature, range: -1...1) { newValue in
+            AdjustmentSlider("Temperature", value: filter.temperature, range: -1...1, defaultValue: 0.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.temperature = newValue }
             }
-            filterSlider("Tint", value: filter.tint, range: -1...1) { newValue in
+            AdjustmentSlider("Tint", value: filter.tint, range: -1...1, defaultValue: 0.0) { newValue in
                 store.updateColorCorrectionFilter(id: filterID) { $0.tint = newValue }
             }
         }
