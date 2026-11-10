@@ -11,7 +11,9 @@
 //
 //    - .osc  (fallback): OSC messages to OBSBOT Center running on this Mac
 //      (default UDP 16284), per the official OBSBOT OSC definition
-//      (obsbot_center_osc_definition 2026-05-08).
+//      (obsbot_center_osc_definition 2026-05-08). Center also answers
+//      GetGimbalPosInfo / GetAiTrackingInfo / GetPresetPositionInfo, which is
+//      polled so the panel tracks changes made in Center itself.
 //
 //  Coordinate frames (kept in one place, conversions are one-liners):
 //
@@ -115,9 +117,33 @@ final class ObsbotPTZController {
     var moveSpeed: Double = 30
     /// Jog speed for direction-pad nudges (wire-frame degrees/second).
     var nudgeSpeed: Double = 25
+    /// Multiplier applied to nudge speed for fine/coarse control.
+    var jogSensitivity: Double = 1.0
+    /// Last AI tracking mode we sent. The OSC definition has no getter for it,
+    /// so this reflects our own writes only.
+    private(set) var aiMode: Int32?
+    /// Last tracking speed we sent (also write-only over OSC).
+    private(set) var trackingSpeed: Int32?
+    /// Preset slot the head is parked at, derived from the polled pose so it
+    /// stays correct no matter which app moved the camera.
+    private(set) var activePreset: Int32?
+    /// AI target lock reported by the camera (`AiTrackingInfo`):
+    /// true = locked onto a target, false = unlocked, nil = not reported yet.
+    private(set) var aiTrackingLocked: Bool?
+    /// Preset slots the camera reports. Empty until `PresetPositionInfo`
+    /// arrives; `presetInfoReceived` distinguishes "none saved" from "unknown".
+    private(set) var presetSlots: [PresetSlot] = []
+    private(set) var presetInfoReceived = false
+
     /// Repeats the active jog command while a pad arrow is held (some
     /// firmware treats a speed frame as a momentary pulse).
     private var nudgeLoop: Task<Void, Never>?
+
+    struct PresetSlot: Identifiable, Equatable, Sendable {
+        let index: Int32
+        let name: String
+        var id: Int32 { index }
+    }
 
     // MARK: Private state
 
@@ -128,6 +154,28 @@ final class ObsbotPTZController {
     private var pendingMove: (pan: Double, tilt: Double)?
     private var moveLoop: Task<Void, Never>?
     private var usbSequence: UInt16 = 0
+    /// Last absolute target handed to the transport, and when. OSC pad steps
+    /// accumulate from here while the head is still travelling instead of from
+    /// the pose poll, which lags by up to 500 ms.
+    private var lastCommandedMove: (pan: Double, tilt: Double)?
+    private var lastCommandedAt: Date?
+    private static let stepBaseWindow: TimeInterval = 1.5
+
+    /// OSC state poll: OBSBOT Center answers `GetGimbalPosInfo` and
+    /// `GetAiTrackingInfo`, which is how the panel tracks changes made in
+    /// Center or from any other OSC client.
+    private var oscStateLoop: Task<Void, Never>?
+    /// Where each hardware preset parks the head, learned the first time we
+    /// trigger it — the OSC definition exposes preset names, not coordinates.
+    private var presetPositions: [Int32: (pan: Double, tilt: Double)] = [:]
+    private var pendingPresetLearn: Int32?
+    private var presetTriggeredAt: Date?
+    private var lastPoseSample: (pan: Double, tilt: Double)?
+    private var loggedOSCAddresses: Set<String> = []
+    private static let presetMatchTolerance: Double = 2.0 // degrees
+    private static let presetLearnSettleDelay: TimeInterval = 1.0
+    private static let presetLearnTimeout: TimeInterval = 8.0
+
     /// Status poll loop (selector 0x06 read): the official library polls this
     /// channel continuously; the 60-byte blocks carry live device status and
     /// may gate write acceptance. Changes are logged for analysis.
@@ -153,6 +201,8 @@ final class ObsbotPTZController {
     // it ACKs pan/tilt writes but nothing physically moves).
     private var gimbalAwake = false
     private var lastWakeSentAt: Date?
+    /// Camera run state reported by Center (`DeviceInfo`), nil = not reported.
+    private var deviceAwake: Bool?
     private static let wakeRefreshInterval: TimeInterval = 8.0
 
     // AI-tracking interlock. The official libdev SDK states: "If the AI smart
@@ -199,15 +249,24 @@ final class ObsbotPTZController {
         moveLoop = nil
         statusLoop?.cancel()
         statusLoop = nil
+        oscStateLoop?.cancel()
+        oscStateLoop = nil
         nudgeLoop?.cancel()
         nudgeLoop = nil
         pendingMove = nil
+        pendingPresetLearn = nil
+        presetTriggeredAt = nil
+        lastPoseSample = nil
+        loggedOSCAddresses.removeAll()
         usb.disconnect()
         oscConnection?.cancel()
         oscConnection = nil
         isConnected = false
         activeTransport = nil
         deviceName = nil
+        aiTrackingLocked = nil
+        presetInfoReceived = false
+        presetSlots = []
         // Wake state is per-connection; a fresh connect must wake again.
         gimbalAwake = false
         lastWakeSentAt = nil
@@ -411,13 +470,27 @@ final class ObsbotPTZController {
         oscConnection = connection
 
         activeTransport = .osc
-        isConnected = true
         deviceName = "OBSBOT Center (OSC :\(Self.defaultOSCUint))"
-        GimbalLog.log("OSC connected to OBSBOT Center UDP :\(Self.defaultOSCUint) (requires OBSBOT Center running)")
-        startMoveLoop()
-        // Announce presence per the OSC definition, then ask for the pose.
-        sendOSC("/OBSBOT/WebCam/General/Connected", [.int32(1)])
-        requestOSCPosition()
+        GimbalLog.log("OSC connecting to OBSBOT Center UDP :\(Self.defaultOSCUint)")
+        // Announce presence per the OSC definition, unlock AI tracking so manual
+        // moves are accepted, then ask for the pose.
+        // Per the OBSBOT OSC definition, the optional first int selects the
+        // device (0 = first/current). Send device index 0 for a single-camera
+        // setup; this also triggers ConnectedResp and DeviceInfo replies.
+        sendOSC("/OBSBOT/WebCam/General/Connected", [.int32(0)])
+        // ToggleAILock takes [deviceIndex, lockState]; 0,0 unlocks AI target.
+        sendOSC("/OBSBOT/WebCam/Tiny/ToggleAILock", [.int32(0), .int32(0)])
+
+        // The link is only real once Center answers: it silently ignores every
+        // datagram when it is not running, so declaring "connected" on send
+        // would leave the panel showing a camera state that cannot be read.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, self.activeTransport == .osc, !self.isConnected else { return }
+            self.lastError = "OBSBOT Center did not answer on UDP \(Self.defaultOSCUint). Turn on Settings ▸ OSC / Remote Controller."
+            GimbalLog.log("OSC connect FAILED (no ConnectedResp within 2s)")
+            self.disconnect()
+        }
     }
 
     // MARK: - Movement
@@ -433,11 +506,61 @@ final class ObsbotPTZController {
         moveStart = nil
         currentPan = clampedPan
         currentTilt = clampedTilt
+        lastCommandedMove = (pan: clampedPan, tilt: clampedTilt)
+        lastCommandedAt = Date()
     }
 
     /// Recenter the gimbal (send to 0/0 within the physical range).
     func recenter() {
         moveTo(pan: 0, tilt: 0)
+    }
+
+    // MARK: - AI tracking and presets
+
+    /// Set the camera's AI tracking mode.
+    /// For Tiny 3 / Tiny 3 Lite: 0 = Human Tracking-Single, 1 = Human Tracking-Group,
+    /// 2 = Voice Tracking, 3 = Desk Mode, 4 = Hand, 5 = Whiteboard.
+    func setAiMode(_ mode: Int32) {
+        guard isConnected else { return }
+        aiMode = mode
+        sendOSC("/OBSBOT/WebCam/Tiny/SetAiMode", [.int32(0), .int32(mode)])
+        GimbalLog.log("setAiMode \(mode)")
+    }
+
+    /// Set the Tiny-series tracking speed: 0 = Slow, 1 = Standard, 2 = Fast.
+    func setTrackingSpeed(_ speed: Int32) {
+        guard isConnected else { return }
+        trackingSpeed = speed
+        sendOSC("/OBSBOT/WebCam/Tiny/SetTrackingSpeed", [.int32(0), .int32(speed)])
+        GimbalLog.log("setTrackingSpeed \(speed)")
+    }
+
+    /// Trigger one of the three hardware preset positions.
+    func triggerPreset(_ index: Int32) {
+        guard isConnected else { return }
+        // Highlight immediately, then let the pose poll confirm (and learn the
+        // slot's resting position) once the head settles.
+        activePreset = index
+        pendingPresetLearn = index
+        presetTriggeredAt = Date()
+        lastPoseSample = nil
+        sendOSC("/OBSBOT/WebCam/Tiny/TriggerPreset", [.int32(0), .int32(index)])
+        GimbalLog.log("triggerPreset \(index)")
+    }
+
+    /// True when the slot exists, or when the camera has not reported presets
+    /// yet — unknown slots stay clickable rather than being disabled on a guess.
+    func isPresetAvailable(_ index: Int32) -> Bool {
+        guard presetInfoReceived else { return true }
+        return presetSlots.contains { $0.index == index }
+    }
+
+    /// Preset name reported by the camera, falling back to the slot number.
+    func presetLabel(_ index: Int32) -> String {
+        guard let slot = presetSlots.first(where: { $0.index == index }), !slot.name.isEmpty else {
+            return "Preset \(index + 1)"
+        }
+        return slot.name
     }
 
     // MARK: - Direction-pad jogging (no position reads needed)
@@ -447,6 +570,9 @@ final class ObsbotPTZController {
     /// Fire-and-forget: works even when encoder reads fail.
     func nudgeStart(pitchWire: Double, panWire: Double) {
         guard isConnected else { return }
+        let speed = nudgeSpeed * jogSensitivity
+        let effPitch = pitchWire * speed
+        let effPan = panWire * speed
         if activeTransport == .usb {
             nudgeLoop?.cancel()
             nudgeLoop = Task { [weak self] in
@@ -456,26 +582,41 @@ final class ObsbotPTZController {
                 // Send immediately, then refresh ~4×/s until nudgeStop cancels.
                 var first = true
                 while !Task.isCancelled {
-                    let frame = ObsbotV3Protocol.speedCommand(roll: 0, pitch: pitchWire, pan: panWire, sequence: self.nextUSBSequence())
+                    let frame = ObsbotV3Protocol.speedCommand(roll: 0, pitch: effPitch, pan: effPan, sequence: self.nextUSBSequence())
                     let ok = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                         DispatchQueue.global(qos: .userInitiated).async { [usb] in
                             continuation.resume(returning: usb.send(frame, selector: ObsbotV3Protocol.selectorXU, unit: ObsbotV3Protocol.xuUnit))
                         }
                     }
                     if first {
-                        self.logFrame("nudge start wire(pitch=\(pitchWire),pan=\(panWire))", frame, ok: ok)
+                        self.logFrame("nudge start wire(pitch=\(effPitch),pan=\(effPan))", frame, ok: ok)
                         first = false
                     }
                     try? await Task.sleep(nanoseconds: 250_000_000)
                 }
             }
         } else {
-            // OSC fallback: one small absolute step in the pressed direction
-            // (wire + = user − on both axes).
-            let stepPan = panWire == 0 ? 0 : (panWire > 0 ? -5.0 : 5.0)
-            let stepTilt = pitchWire == 0 ? 0 : (pitchWire > 0 ? -5.0 : 5.0)
-            moveTo(pan: currentPan + stepPan, tilt: currentTilt + stepTilt)
+            // OSC has no jog command: each press is one absolute step. It is
+            // measured from the last commanded target while the head is still
+            // travelling, otherwise from the pose poll — tapping faster than
+            // the 2 Hz poll would collapse every step onto one stale reading.
+            let base = steppingBase()
+            let step = 5.0 * jogSensitivity
+            let stepPan = panWire == 0 ? 0 : (panWire > 0 ? -step : step)
+            let stepTilt = pitchWire == 0 ? 0 : (pitchWire > 0 ? -step : step)
+            moveTo(pan: base.pan + stepPan, tilt: base.tilt + stepTilt)
         }
+    }
+
+    /// Where a pad step starts from: the last commanded target while a move is
+    /// still in flight, otherwise the measured pose.
+    private func steppingBase() -> (pan: Double, tilt: Double) {
+        if let target = lastCommandedMove,
+           let sentAt = lastCommandedAt,
+           Date().timeIntervalSince(sentAt) < Self.stepBaseWindow {
+            return target
+        }
+        return (pan: currentPan, tilt: currentTilt)
     }
 
     /// Stop a jog started by nudgeStart.
@@ -527,6 +668,15 @@ final class ObsbotPTZController {
     /// Ensure the gimbal is awake before a move. Wakes on first use and re-wakes
     /// if we haven't sent a wake recently (the camera may have re-stowed).
     private func ensureAwake() async {
+        if activeTransport == .osc {
+            // Center reports the camera's run state in DeviceInfo; a stowed
+            // camera accepts moves without driving the motors.
+            guard deviceAwake != true else { return }
+            sendOSC("/OBSBOT/WebCam/General/WakeSleep", [.int32(0), .int32(1)])
+            deviceAwake = true
+            GimbalLog.log("OSC wake sent")
+            return
+        }
         let stale = lastWakeSentAt.map { Date().timeIntervalSince($0) > Self.wakeRefreshInterval } ?? true
         if !gimbalAwake || stale {
             _ = await sendWake()
@@ -551,11 +701,14 @@ final class ObsbotPTZController {
     private func disableTracking() async -> Bool {
         switch activeTransport {
         case .osc:
-            // Tiny 3 Lite SetAiMode has no "off"; 0 (Human-Single) is the
-            // closest to a non-roaming mode. ToggleAILock is also sent on
-            // connect to stop it re-acquiring a subject.
-            sendOSC("/OBSBOT/WebCam/Tiny/SetAiMode", [.int32(0)])
-            GimbalLog.log("tracking-off: OSC SetAiMode 0 sent")
+            // The Tiny 3 Lite has no "tracking off" mode over OSC: modes 0-5
+            // are all tracking modes (0 = Human Tracking-Single, not "off"), so
+            // sending SetAiMode only ever switches the camera *into* tracking
+            // and then the firmware drives the gimbal instead of us. Only the
+            // target lock can be released, which is what lets manual moves stick
+            // while nothing is locked.
+            sendOSC("/OBSBOT/WebCam/Tiny/ToggleAILock", [.int32(0), .int32(0)])
+            GimbalLog.log("tracking-off: OSC ToggleAILock 0 (AI mode is not switchable off over OSC)")
             trackingDisabled = true
             lastTrackingDisableAt = Date()
             return true
@@ -604,9 +757,13 @@ final class ObsbotPTZController {
             await driveToward(pan: panUser, tilt: tiltUser)
         case .osc:
             // OSC absolute move: same wire convention as vendor (pan + = left,
-            // pitch + = down), degrees. Speed 0-90.
+            // pitch + = down), degrees. Speed 0-90. The first argument is the
+            // device index; the next three are speed, pan, tilt.
             await ensureTrackingOff()
+            await ensureAwake()
+            GimbalLog.log("OSC move user(pan=\(panUser),tilt=\(tiltUser)) wire(pan=\(-panUser),tilt=\(-tiltUser))")
             sendOSC("/OBSBOT/WebCam/General/SetGimMotorDegreeEx", [
+                .int32(0),
                 .float32(Float(moveSpeed)),
                 .float32(Float(-panUser)),
                 .float32(Float(-tiltUser)),
@@ -760,6 +917,32 @@ final class ObsbotPTZController {
         sendOSC("/OBSBOT/WebCam/General/GetGimbalPosInfo", [.int32(0)])
     }
 
+    private func requestOSCTrackingInfo() {
+        sendOSC("/OBSBOT/WebCam/Tiny/GetAiTrackingInfo", [.int32(0)])
+    }
+
+    private func requestOSCPresetInfo() {
+        sendOSC("/OBSBOT/WebCam/Tiny/GetPresetPositionInfo", [.int32(0)])
+    }
+
+    /// Poll the two state channels Center can answer: pose at 2 Hz (so the
+    /// panel follows moves made anywhere), AI lock at 2 s (it changes rarely).
+    private func startOSCStatePoll() {
+        oscStateLoop?.cancel()
+        oscStateLoop = Task { [weak self] in
+            var tick = 0
+            while !Task.isCancelled {
+                guard let self, self.isConnected, self.activeTransport == .osc else { return }
+                self.requestOSCPosition()
+                if tick % 4 == 0 {
+                    self.requestOSCTrackingInfo()
+                }
+                tick += 1
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+    }
+
     private func listenForOSCReplies(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             if let data, let message = OSCMessage.decode(data) {
@@ -778,16 +961,142 @@ final class ObsbotPTZController {
     }
 
     private func handleOSCReply(_ message: OSCMessage) {
-        // GimbalPosInfoResp: roll, pitch, yaw in whole degrees (OSC type "iii",
-        // wire frame: pitch + = down, yaw + = left).
-        guard message.address.hasSuffix("GimbalPosInfoResp"),
-              message.arguments.count >= 3,
-              let pitch = message.arguments[1].asInt32,
-              let yaw = message.arguments[2].asInt32
-        else { return }
-        // Wire → user: yaw + = left → user pan = -yaw; pitch + = down → user tilt = -pitch.
-        currentPan = Double(-yaw)
+        logFirstInboundOSC(message)
+
+        if message.address.hasSuffix("ConnectedResp") {
+            handleOSCConnected()
+        } else if message.address.hasSuffix("DeviceInfo") {
+            applyOSCDeviceInfo(message.arguments)
+        } else if message.address.hasSuffix("GimbalPosInfoResp") {
+            applyOSCPose(message.arguments)
+        } else if message.address.hasSuffix("AiTrackingInfo") {
+            // Single int: 1 = target locked, 0 = unlocked. Take the last int so
+            // a leading device index (if Center includes one) is ignored.
+            guard let locked = message.arguments.last?.asInt32 else { return }
+            let newValue = locked != 0
+            if newValue != aiTrackingLocked {
+                aiTrackingLocked = newValue
+                GimbalLog.log("AI target \(newValue ? "locked" : "unlocked") (from camera)")
+            }
+        } else if message.address.hasSuffix("PresetPositionInfo") {
+            applyOSCPresetInfo(message.arguments)
+        }
+    }
+
+    private func handleOSCConnected() {
+        guard activeTransport == .osc, !isConnected else { return }
+        isConnected = true
+        lastError = nil
+        GimbalLog.log("OSC connected: Center answered ConnectedResp")
+        // The move loop exits for good if it starts before the link is up, so
+        // it is started here rather than at connect time.
+        startMoveLoop()
+        requestOSCPresetInfo()
+        requestOSCPosition()
+        requestOSCTrackingInfo()
+        startOSCStatePoll()
+    }
+
+    /// GimbalPosInfoResp: motor degrees in the wire frame (pan + = left,
+    /// pitch + = down).
+    private func applyOSCPose(_ arguments: [OSCArgument]) {
+        let values = arguments.compactMap(\.asInt32)
+        guard values.count >= 2 else { return }
+        // Center 2.0.15 answers with pan, pitch — the same order and frame as
+        // the SetGimMotorDegree arguments (verified by commanding one axis at a
+        // time: pan 100 read back as 100 in the first value). The definition
+        // documents roll/pitch/yaw instead, so a three-value reply is read as
+        // pitch, yaw.
+        let pan: Int32
+        let pitch: Int32
+        if values.count >= 3 {
+            pitch = values[values.count - 2]
+            pan = values[values.count - 1]
+        } else {
+            pan = values[0]
+            pitch = values[1]
+        }
+        // Wire → user: pan + = left, pitch + = down; both flip.
+        currentPan = Double(-pan)
         currentTilt = Double(-pitch)
+        updatePresetHighlight()
+    }
+
+    /// DeviceInfo: per-device connected flags/names, then the selected device
+    /// index, its run state (0 = sleep, 1 = run) and its type. Only the run
+    /// state matters here: a stowed camera ACKs moves without driving motors.
+    private func applyOSCDeviceInfo(_ arguments: [OSCArgument]) {
+        guard arguments.count >= 3 else { return }
+        guard let runState = arguments[arguments.count - 2].asInt32 else { return }
+        let awake = runState != 0
+        if awake != deviceAwake {
+            deviceAwake = awake
+            GimbalLog.log("camera run state: \(awake ? "awake" : "asleep")")
+        }
+    }
+
+    /// PresetPositionInfo: isisisis — exists1, name1, exists2, name2, exists3,
+    /// name3. Coordinates are not exposed, so only names/availability come from
+    /// the camera here.
+    private func applyOSCPresetInfo(_ arguments: [OSCArgument]) {
+        guard !arguments.isEmpty, arguments.count % 2 == 0 else {
+            GimbalLog.log("preset info ignored (unexpected \(arguments.count) args)")
+            return
+        }
+        var slots: [PresetSlot] = []
+        for pair in stride(from: 0, to: arguments.count, by: 2) {
+            guard let exists = arguments[pair].asInt32 else { continue }
+            let name = arguments[pair + 1].asString ?? ""
+            if exists != 0 {
+                slots.append(PresetSlot(index: Int32(pair / 2), name: name))
+            }
+        }
+        presetSlots = slots
+        presetInfoReceived = true
+        GimbalLog.log("preset slots: \(slots.map { "\($0.index)=\($0.name)" }.joined(separator: ","))")
+    }
+
+    /// Highlight whichever preset slot the head is parked at. Slots' resting
+    /// poses are learned the first time they are triggered (the camera reports
+    /// no preset coordinates), which keeps the highlight truthful even when
+    /// Center or a StreamDeck triggers the preset.
+    private func updatePresetHighlight() {
+        if let slot = pendingPresetLearn {
+            let settled = lastPoseSample.map { abs($0.pan - currentPan) < 0.5 && abs($0.tilt - currentTilt) < 0.5 } ?? false
+            let travelled = presetTriggeredAt.map { Date().timeIntervalSince($0) > Self.presetLearnSettleDelay } ?? false
+            let timedOut = presetTriggeredAt.map { Date().timeIntervalSince($0) > Self.presetLearnTimeout } ?? false
+            if settled, travelled {
+                presetPositions[slot] = (pan: currentPan, tilt: currentTilt)
+                pendingPresetLearn = nil
+                GimbalLog.log("preset \(slot) parks at pan=\(currentPan) tilt=\(currentTilt)")
+            } else if timedOut {
+                pendingPresetLearn = nil
+                GimbalLog.log("preset \(slot) learn TIMEOUT (head never settled)")
+            } else {
+                lastPoseSample = (pan: currentPan, tilt: currentTilt)
+                return // still travelling: keep the optimistic highlight
+            }
+        }
+        lastPoseSample = (pan: currentPan, tilt: currentTilt)
+        activePreset = presetPositions.first { entry in
+            abs(entry.value.pan - currentPan) < Self.presetMatchTolerance
+                && abs(entry.value.tilt - currentTilt) < Self.presetMatchTolerance
+        }?.key
+    }
+
+    /// Log each inbound OSC address once with its arguments. Center is the only
+    /// source of this traffic, so this is how we discover undocumented pushes
+    /// (e.g. anything that would let us mirror AI mode changes).
+    private func logFirstInboundOSC(_ message: OSCMessage) {
+        guard loggedOSCAddresses.insert(message.address).inserted else { return }
+        let args = message.arguments.map { argument -> String in
+            switch argument {
+            case .int32(let value): return String(value)
+            case .float32(let value): return String(value)
+            case .string(let value): return "\"\(value)\""
+            }
+        }.joined(separator: ",")
+        GimbalLog.log("OSC ← \(message.address) [\(args)]")
     }
 
     // MARK: - Misc helpers
@@ -819,6 +1128,11 @@ final class ObsbotPTZController {
 private extension OSCArgument {
     var asInt32: Int32? {
         if case .int32(let value) = self { return value }
+        return nil
+    }
+
+    var asString: String? {
+        if case .string(let value) = self { return value }
         return nil
     }
 }

@@ -32,6 +32,7 @@ struct CameraAdjustmentsEditor: View {
     @Environment(\.cameraControlService) private var cameraControlService
     @State private var presetName = ""
     @State private var transportSelection: ObsbotPTZController.Transport = .usb
+    @State private var showGimbalTuning = false
     /// Currently held jog-pad arrow (drives the pressed accent).
     @State private var pressedArrow: String? = nil
 
@@ -136,8 +137,8 @@ struct CameraAdjustmentsEditor: View {
             }
 
             if service.ptz.isConnected {
-                gimbalPad(service)
-                gimbalSliders(service)
+                gimbalControls(service)
+                gimbalTuningPanel(service)
 
                 HStack(spacing: 8) {
                     Button("Read Position") {
@@ -148,6 +149,12 @@ struct CameraAdjustmentsEditor: View {
                     Button("Recenter") {
                         service.ptz.recenter()
                         store.updateSelectedLayerGimbal(pan: 0, tilt: 0)
+                    }
+                    .controlSize(.small)
+
+                    Button("Disconnect") {
+                        service.disconnectGimbal()
+                        transportSelection = .usb
                     }
                     .controlSize(.small)
 
@@ -216,6 +223,77 @@ struct CameraAdjustmentsEditor: View {
 
     // MARK: - Direction pad (manual jog; needs no position reads)
 
+    /// Arrow pad plus the commonly-used tracking/preset buttons to its right.
+    @ViewBuilder
+    private func gimbalControls(_ service: CameraControlService) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            gimbalPad(service)
+            gimbalButtonStack(service)
+        }
+    }
+
+    @ViewBuilder
+    private func gimbalButtonStack(_ service: CameraControlService) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                tuningButton("Single", isActive: service.ptz.aiMode == 0) { service.ptz.setAiMode(0) }
+                tuningButton("Group", isActive: service.ptz.aiMode == 1) { service.ptz.setAiMode(1) }
+            }
+            .help("AI mode is write-only over OSC: the camera never reports it back, so a mode picked in OBSBOT Center cannot be shown here.")
+
+            HStack(spacing: 6) {
+                tuningButton("Slow", isActive: service.ptz.trackingSpeed == 0) { service.ptz.setTrackingSpeed(0) }
+                tuningButton("Standard", isActive: service.ptz.trackingSpeed == 1) { service.ptz.setTrackingSpeed(1) }
+                tuningButton("Fast", isActive: service.ptz.trackingSpeed == 2) { service.ptz.setTrackingSpeed(2) }
+            }
+            .help("Tracking speed is write-only over OSC, like the AI mode.")
+
+            HStack(spacing: 6) {
+                ForEach(Int32(0)...2, id: \.self) { index in
+                    tuningButton(service.ptz.presetLabel(index), isActive: service.ptz.activePreset == index) {
+                        service.ptz.triggerPreset(index)
+                    }
+                    .disabled(!service.ptz.isPresetAvailable(index))
+                }
+            }
+            .help("Preset names come from the camera. A preset lights up while the head is parked on it, whoever moved it.")
+
+            aiLockRow(service)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// AI target lock as reported by the camera (GetAiTrackingInfo), so the
+    /// panel follows locks and releases made in OBSBOT Center.
+    @ViewBuilder
+    private func aiLockRow(_ service: CameraControlService) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(aiLockColor(service.ptz.aiTrackingLocked))
+                .frame(width: 6, height: 6)
+            Text(aiLockLabel(service.ptz.aiTrackingLocked))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func aiLockLabel(_ locked: Bool?) -> String {
+        switch locked {
+        case .some(true): return "AI target locked"
+        case .some(false): return "AI target unlocked"
+        case .none: return "AI lock unknown"
+        }
+    }
+
+    private func aiLockColor(_ locked: Bool?) -> Color {
+        switch locked {
+        case .some(true): return .green
+        case .some(false): return .orange
+        case .none: return .clear
+        }
+    }
+
     /// Ecamm-style jog pad: press-and-hold an arrow to drive the head at the
     /// jog speed, release to stop. Speeds are wire frame (pitch + = down,
     /// pan + = left), converted here from the arrows.
@@ -243,9 +321,6 @@ struct CameraAdjustmentsEditor: View {
                     .accessibilityLabel("Tilt down")
                 Color.clear.frame(width: 44, height: 34)
             }
-            cameraSlider("Jog °/s", value: service.ptz.nudgeSpeed, range: 5...60) {
-                service.ptz.nudgeSpeed = $0
-            }
         }
         .padding(.vertical, 2)
     }
@@ -260,10 +335,7 @@ struct CameraAdjustmentsEditor: View {
             .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
                 if pressing {
                     pressedArrow = id
-                    service.ptz.nudgeStart(
-                        pitchWire: pitchWire * service.ptz.nudgeSpeed,
-                        panWire: panWire * service.ptz.nudgeSpeed
-                    )
+                    service.ptz.nudgeStart(pitchWire: pitchWire, panWire: panWire)
                 } else {
                     if pressedArrow == id { pressedArrow = nil }
                     service.ptz.nudgeStop()
@@ -272,15 +344,55 @@ struct CameraAdjustmentsEditor: View {
     }
 
     @ViewBuilder
-    private func gimbalSliders(_ service: CameraControlService) -> some View {
-        let panRange = service.ptz.panRange
-        let tiltRange = service.ptz.tiltRange
+    private func gimbalTuningPanel(_ service: CameraControlService) -> some View {
+        DisclosureGroup("Gimbal Tuning", isExpanded: $showGimbalTuning) {
+            VStack(alignment: .leading, spacing: 10) {
+                cameraSlider("Move Speed", value: service.ptz.moveSpeed, range: 0...90) {
+                    service.ptz.moveSpeed = $0
+                }
 
-        cameraSlider("Pan °", value: gimbal.pan, range: panRange) { newValue in
-            store.updateSelectedLayerGimbal(pan: newValue)
+                cameraSlider("Jog Speed", value: service.ptz.nudgeSpeed, range: 5...60) {
+                    service.ptz.nudgeSpeed = $0
+                }
+
+                Picker("Sensitivity", selection: Binding(
+                    get: { service.ptz.jogSensitivity },
+                    set: { service.ptz.jogSensitivity = $0 }
+                )) {
+                    Text("Fine").tag(0.25)
+                    Text("Normal").tag(1.0)
+                    Text("Coarse").tag(4.0)
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.vertical, 4)
         }
-        cameraSlider("Tilt °", value: gimbal.tilt, range: tiltRange) { newValue in
-            store.updateSelectedLayerGimbal(tilt: newValue)
+    }
+
+    private func tuningButton(
+        _ title: String,
+        isActive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(title, action: action)
+            .buttonStyle(ModeButtonStyle(isActive: isActive))
+    }
+
+    private struct ModeButtonStyle: ButtonStyle {
+        let isActive: Bool
+        @Environment(\.isEnabled) private var isEnabled
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .font(.caption.bold())
+                .lineLimit(1)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .background(isActive ? Color.red : Color.gray.opacity(0.25))
+                .foregroundStyle(isActive ? .white : .primary)
+                .clipShape(.rect(cornerRadius: 6))
+                .opacity(!isEnabled ? 0.35 : (configuration.isPressed ? 0.8 : 1.0))
         }
     }
 
