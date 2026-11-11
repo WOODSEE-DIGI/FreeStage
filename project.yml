@@ -69,6 +69,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_OBJC_BRIDGING_HEADER: Sources/FreeStage/FreeStage-Bridging-Header.h
         CODE_SIGN_ENTITLEMENTS: Resources/FreeStage.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         OTHER_SWIFT_FLAGS:
           - -warnings-as-errors
         CLANG_CXX_LANGUAGE_STANDARD: c++17
