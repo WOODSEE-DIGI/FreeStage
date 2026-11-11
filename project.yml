@@ -26,6 +26,7 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - Sources/FreeStage
+      - Resources/Assets.xcassets
       - path: Vendor/MediaPipeFaceMesh/src
       - path: Vendor/MediaPipeFaceMesh/models/face_blendshapes.tflite
         buildPhase: resources
