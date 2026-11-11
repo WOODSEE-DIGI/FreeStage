@@ -59,6 +59,9 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
     /// keyed subject. If nil, keyed areas reveal whatever is behind this
     /// layer in the scene.
     var backgroundSource: Source?
+    /// Independent transform for the background source. Position and scale are
+    /// relative to the layer bounds (0.5 = centered, 1.0 = cover-fit size).
+    var backgroundTransform: ItemTransform
 
     init(
         id: UUID = UUID(),
@@ -72,7 +75,8 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         edgeDespill: Double = 0.5,
         skinToneProtection: Double = 0.3,
         bypass: Bool = false,
-        backgroundSource: Source? = nil
+        backgroundSource: Source? = nil,
+        backgroundTransform: ItemTransform = .identity
     ) {
         self.id = id
         self.isEnabled = isEnabled
@@ -86,12 +90,14 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         self.skinToneProtection = skinToneProtection
         self.bypass = bypass
         self.backgroundSource = backgroundSource
+        self.backgroundTransform = backgroundTransform
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, isEnabled, keyColors, threshold, smoothing
         case edgeFeather, spillSuppression, spillRange
         case edgeDespill, skinToneProtection, bypass, backgroundSource
+        case backgroundTransform
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +115,7 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         self.skinToneProtection = try container.decodeIfPresent(Double.self, forKey: .skinToneProtection) ?? 0.3
         self.bypass = try container.decodeIfPresent(Bool.self, forKey: .bypass) ?? false
         self.backgroundSource = try container.decodeIfPresent(Source.self, forKey: .backgroundSource)
+        self.backgroundTransform = try container.decodeIfPresent(ItemTransform.self, forKey: .backgroundTransform) ?? .identity
     }
 
     func encode(to encoder: Encoder) throws {
@@ -125,6 +132,7 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         try container.encode(skinToneProtection, forKey: .skinToneProtection)
         try container.encode(bypass, forKey: .bypass)
         try container.encode(backgroundSource, forKey: .backgroundSource)
+        try container.encode(backgroundTransform, forKey: .backgroundTransform)
     }
 
     /// Convenience accessor for the primary key color.

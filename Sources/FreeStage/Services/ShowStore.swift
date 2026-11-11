@@ -583,6 +583,20 @@ final class ShowStore: NSObject {
         return playlist
     }
 
+    /// The image URL if the selected layer is a static image source.
+    var selectedLayerImage: URL? {
+        guard let layer = selectedLayer,
+              case .image(let url) = layer.source else { return nil }
+        return url
+    }
+
+    /// The video URL if the selected layer is a media source.
+    var selectedLayerMedia: URL? {
+        guard let layer = selectedLayer,
+              case .media(let url) = layer.source else { return nil }
+        return url
+    }
+
     /// Update the animation state of any selected animatable template layer.
     func updateSelectedLayerAnimation(_ mutation: (inout TemplateAnimation) -> Void) {
         updateSelectedLayer { layer in

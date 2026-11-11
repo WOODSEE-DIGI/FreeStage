@@ -1,0 +1,63 @@
+//
+//  ImageControlsView.swift
+//  FreeStage
+//
+//  Inspector controls for a static image layer source.
+//
+
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ImageControlsView: View {
+    @Environment(ShowStore.self) private var store
+    @State private var isPicking = false
+
+    var body: some View {
+        GroupBox("Image") {
+            VStack(alignment: .leading, spacing: 12) {
+                if let url = store.selectedLayerImage {
+                    HStack {
+                        Text(url.lastPathComponent)
+                            .font(.caption)
+                            .lineLimit(1)
+                        Spacer()
+                        Button("Change…") {
+                            isPicking = true
+                        }
+                        .font(.caption)
+                        .controlSize(.small)
+                    }
+                } else {
+                    HStack {
+                        Text("No image selected")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Choose Image…") {
+                            isPicking = true
+                        }
+                        .font(.caption)
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+        .padding([.horizontal, .top])
+        .fileImporter(
+            isPresented: $isPicking,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                store.updateSelectedLayer { layer in
+                    guard case .image = layer.source else { return }
+                    layer.source = .image(url: url)
+                }
+            case .failure:
+                break
+            }
+        }
+    }
+}

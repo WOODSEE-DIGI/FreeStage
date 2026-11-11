@@ -120,6 +120,10 @@ private struct FilterParams {
     var ccTemperature: Float
     var ccTint: Float
     var pad: Float
+    var bgPositionX: Float
+    var bgPositionY: Float
+    var bgZoom: Float
+    var bgPad: Float
 
     init(layer: Layer) {
         var flags: UInt32 = 0
@@ -144,6 +148,9 @@ private struct FilterParams {
         var ccGamma: Float = 1.0
         var ccTemperature: Float = 0.0
         var ccTint: Float = 0.0
+        var bgPositionX: Float = 0.5
+        var bgPositionY: Float = 0.5
+        var bgZoom: Float = 1.0
 
         for filter in layer.filters {
             switch filter {
@@ -165,6 +172,9 @@ private struct FilterParams {
                         flags |= 4
                     }
                 }
+                bgPositionX = Float(f.backgroundTransform.x)
+                bgPositionY = Float(f.backgroundTransform.y)
+                bgZoom = Float(max(f.backgroundTransform.scaleX, 0.01))
             case .colorCorrection(let f):
                 flags |= 1
                 ccBrightness = Float(f.brightness)
@@ -200,6 +210,10 @@ private struct FilterParams {
         self.ccTemperature = ccTemperature
         self.ccTint = ccTint
         self.pad = 0
+        self.bgPositionX = bgPositionX
+        self.bgPositionY = bgPositionY
+        self.bgZoom = bgZoom
+        self.bgPad = 0
     }
 }
 

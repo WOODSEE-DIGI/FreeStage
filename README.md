@@ -16,9 +16,9 @@ Show
  └── Cues (ordered, fireable)
       └── Scene
            └── Layers (ordered back-to-front)
-                 ├── Source (camera, NDI, media, screen, browser, color, text)
+                 ├── Source (camera, NDI, media, screen, browser, color, text, image, video)
                  ├── Transform (position, scale, rotation, crop)
-                 ├── Filters (chroma key, AI keyer, color correction)
+                 ├── Filters (chroma key with independent background transform, AI keyer, color correction)
                  └── Blend Mode
 ```
 

@@ -16,6 +16,8 @@ struct LayerEditorView: View {
     @State private var isAddingCamera = false
     @State private var isAddingScreen = false
     @State private var isAddingSlideshow = false
+    @State private var isAddingImage = false
+    @State private var isAddingVideo = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +71,12 @@ struct LayerEditorView: View {
                             if isFacePuppetSource(store.selectedLayer?.source) {
                                 FacePuppetControlsView()
                             }
+                            if store.selectedLayerImage != nil {
+                                ImageControlsView()
+                            }
+                            if store.selectedLayerMedia != nil {
+                                VideoControlsView()
+                            }
 
                             FilterEditorView()
                             CameraControlsView()
@@ -111,6 +119,32 @@ struct LayerEditorView: View {
         .sheet(isPresented: $isAddingSlideshow) {
             SlideshowPickerSheet { slideshow in
                 addLayer(source: .slideshow(slideshow), name: "Slideshow")
+            }
+        }
+        .fileImporter(
+            isPresented: $isAddingImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                addLayer(source: .image(url: url), name: url.deletingPathExtension().lastPathComponent)
+            case .failure:
+                break
+            }
+        }
+        .fileImporter(
+            isPresented: $isAddingVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                addLayer(source: .media(url: url), name: url.deletingPathExtension().lastPathComponent)
+            case .failure:
+                break
             }
         }
     }
@@ -161,6 +195,8 @@ struct LayerEditorView: View {
             Button("Screen…") { isAddingScreen = true }
             Button("Face Puppet…") { beginAddingFacePuppet() }
             Button("Face Puppet Mesh…") { beginAddingFacePuppetMesh() }
+            Button("Image…") { isAddingImage = true }
+            Button("Video…") { isAddingVideo = true }
             Button("Color") { addLayer(source: .color(.green), name: "Color") }
             Button("Text") { addLayer(source: .text(TextSource()), name: "Text") }
             Button("Slideshow…") { isAddingSlideshow = true }

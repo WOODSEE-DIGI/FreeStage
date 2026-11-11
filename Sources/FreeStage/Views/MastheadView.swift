@@ -17,6 +17,8 @@ struct MastheadView: View {
     @State private var isAddingCamera = false
     @State private var isAddingScreen = false
     @State private var isAddingSlideshow = false
+    @State private var isAddingImage = false
+    @State private var isAddingVideo = false
 
     var body: some View {
         @Bindable var store = store
@@ -78,6 +80,36 @@ struct MastheadView: View {
                 store.selectCue(id: cueID)
             }
         }
+        .fileImporter(
+            isPresented: $isAddingImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let name = url.deletingPathExtension().lastPathComponent
+                let cueID = store.addCue(source: .image(url: url), name: name)
+                store.selectCue(id: cueID)
+            case .failure:
+                break
+            }
+        }
+        .fileImporter(
+            isPresented: $isAddingVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let name = url.deletingPathExtension().lastPathComponent
+                let cueID = store.addCue(source: .media(url: url), name: name)
+                store.selectCue(id: cueID)
+            case .failure:
+                break
+            }
+        }
     }
 
     private var addCueMenu: some View {
@@ -86,7 +118,8 @@ struct MastheadView: View {
             Button("Screen…") { isAddingScreen = true }
             Button("Color") { addCue(source: .color(.green), name: "Color") }
             Button("Text") { addCue(source: .text(TextSource()), name: "Text") }
-            Button("Image") { addCue(source: .color(.black), name: "Image") }
+            Button("Image…") { isAddingImage = true }
+            Button("Video…") { isAddingVideo = true }
             Button("Slideshow…") { isAddingSlideshow = true }
             Button("Draw") { addDrawingCue() }
             Divider()

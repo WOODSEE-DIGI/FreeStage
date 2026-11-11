@@ -43,6 +43,10 @@ struct FilterParams {
     float ccTemperature;
     float ccTint;
     float _pad;
+    float bgPositionX;
+    float bgPositionY;
+    float bgZoom;
+    float bgPad;
 };
 
 constant uint FLAG_COLOR_CORRECTION = 1u;
@@ -245,16 +249,20 @@ kernel void compositeLayer(
 
     // Determine destination pixels. With a background, cover-fit it to the
     // layer's on-screen rectangle (using the layer-local UV) so the aspect
-    // ratio is preserved. Without a background, read the existing output.
+    // ratio is preserved, then apply independent pan/zoom from the chroma-key
+    // filter. Without a background, read the existing output.
     float4 dst;
     if (hasBackground) {
         float2 bgSize = float2(background.get_width(), background.get_height());
         float layerAspect = params.scale.x * outputSize.x / (params.scale.y * outputSize.y);
         float bgAspect = bgSize.x / bgSize.y;
-        float2 bgScale = (bgAspect > layerAspect)
+        float2 coverScale = (bgAspect > layerAspect)
             ? float2(layerAspect / bgAspect, 1.0)
             : float2(1.0, bgAspect / layerAspect);
-        float2 bgUV = (sourceUV - 0.5) / bgScale + 0.5;
+        float2 bgCenter = float2(filters.bgPositionX, filters.bgPositionY);
+        float zoom = max(filters.bgZoom, 0.01);
+        float2 effectiveScale = coverScale * zoom;
+        float2 bgUV = (sourceUV - bgCenter) / effectiveScale + 0.5;
         bgUV = clamp(bgUV, 0.0, 1.0);
         uint2 bgCoord = uint2(bgUV * bgSize);
         dst = background.read(bgCoord);

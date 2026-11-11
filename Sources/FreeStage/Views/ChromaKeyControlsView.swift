@@ -203,16 +203,50 @@ struct ChromaKeyControlsView: View {
         .padding(.top, 4)
 
         if let source = filter.backgroundSource {
-            HStack {
-                Text(source.defaultName)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(source.defaultName)
+                        .font(.caption)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Clear") {
+                        store.updateSelectedLayerChromaKey { $0.backgroundSource = nil }
+                    }
                     .font(.caption)
-                    .lineLimit(1)
-                Spacer()
-                Button("Clear") {
-                    store.updateSelectedLayerChromaKey { $0.backgroundSource = nil }
+                    .buttonStyle(.borderless)
                 }
-                .font(.caption)
-                .buttonStyle(.borderless)
+
+                HStack {
+                    Text("Position")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    AdjustmentSlider("X", value: filter.backgroundTransform.x, range: 0...1, defaultValue: 0.5) { newValue in
+                        store.updateSelectedLayerChromaKey { $0.backgroundTransform.x = newValue }
+                    }
+                    AdjustmentSlider("Y", value: filter.backgroundTransform.y, range: 0...1, defaultValue: 0.5) { newValue in
+                        store.updateSelectedLayerChromaKey { $0.backgroundTransform.y = newValue }
+                    }
+                }
+
+                AdjustmentSlider("Zoom", value: filter.backgroundTransform.scaleX, range: 0.1...5, defaultValue: 1.0) { newValue in
+                    store.updateSelectedLayerChromaKey {
+                        $0.backgroundTransform.scaleX = newValue
+                        $0.backgroundTransform.scaleY = newValue
+                    }
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Reset Background") {
+                        store.updateSelectedLayerChromaKey { $0.backgroundTransform = .identity }
+                    }
+                    .font(.caption)
+                    .controlSize(.small)
+                }
             }
         } else {
             HStack(spacing: 8) {
