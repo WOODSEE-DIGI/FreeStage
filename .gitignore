@@ -5,6 +5,7 @@ DerivedData/
 build/
 .idea/
 .vscode/
+.firecrawl/
 *.swp
 *.swo
 *~

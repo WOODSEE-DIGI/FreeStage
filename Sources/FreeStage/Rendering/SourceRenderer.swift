@@ -33,6 +33,8 @@ struct SourceRendererRegistry: Sendable {
     private let cameraRenderer: CameraSourceRenderer
     private let screenRenderer: ScreenSourceRenderer
     private let facePuppetRenderer: FacePuppetSourceRenderer
+    private let syphonRenderer = SyphonSourceRenderer()
+    private let ndiRenderer = NDISourceRenderer()
 
     init(
         captureManager: CameraCaptureManager,
@@ -73,6 +75,10 @@ struct SourceRendererRegistry: Sendable {
             return try screenRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .facePuppet, .facePuppetAnchored, .facePuppetMesh:
             return try facePuppetRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .syphon:
+            return try syphonRenderer.render(source: source, device: device, commandQueue: commandQueue)
+        case .ndi:
+            return try ndiRenderer.render(source: source, device: device, commandQueue: commandQueue)
         default:
             return nil
         }
@@ -82,6 +88,7 @@ struct SourceRendererRegistry: Sendable {
 extension Source {
     enum Kind: Hashable, Sendable {
         case ndi
+        case syphon
         case camera
         case screen
         case media
@@ -109,6 +116,7 @@ extension Source {
     var kind: Kind {
         switch self {
         case .ndi: return .ndi
+        case .syphon: return .syphon
         case .camera: return .camera
         case .screen: return .screen
         case .media: return .media

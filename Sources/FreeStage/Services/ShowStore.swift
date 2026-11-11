@@ -29,9 +29,16 @@ final class ShowStore: NSObject {
 
     init(show: Show = .default()) {
         self.show = show
-        let firstCueID = show.cues.first?.id
-        self.activeCueID = firstCueID
-        self.liveCueID = firstCueID
+        let workspace = show.workspace
+        self.activeCueID = workspace.activeCueID ?? show.cues.first?.id
+        self.liveCueID = workspace.liveCueID ?? show.cues.first?.id
+        self.selectedLayerID = workspace.selectedLayerID
+        self.selectedSceneID = workspace.selectedSceneID
+        self.isEditMode = workspace.isEditMode
+        self.mastheadVisible = workspace.mastheadVisible
+        self.sidebarVisible = workspace.sidebarVisible
+        self.inspectorVisible = workspace.inspectorVisible
+        self.panicDuration = workspace.panicDuration
     }
 
     // MARK: - Selected / playhead cue
@@ -153,6 +160,23 @@ final class ShowStore: NSObject {
 
     // MARK: - Playback control
 
+    /// Replace the current show and restore all saved workspace state.
+    func load(show: Show) {
+        stopCameraMove()
+        self.show = show
+        let workspace = show.workspace
+        activeCueID = workspace.activeCueID ?? show.cues.first?.id
+        liveCueID = workspace.liveCueID ?? show.cues.first?.id
+        selectedLayerID = workspace.selectedLayerID
+        selectedSceneID = workspace.selectedSceneID
+        isEditMode = workspace.isEditMode
+        mastheadVisible = workspace.mastheadVisible
+        sidebarVisible = workspace.sidebarVisible
+        inspectorVisible = workspace.inspectorVisible
+        panicDuration = workspace.panicDuration
+        isPlaying = false
+    }
+
     func resetWorkspace() {
         stopCameraMove()
         let firstCueID = show.cues.first?.id
@@ -256,9 +280,13 @@ final class ShowStore: NSObject {
     }
 
     /// Quick-create a scene with a single source layer and a cue that points to it.
+    /// Applies any saved layer defaults for the source.
     @discardableResult
     func addCue(source: Source, name: String? = nil) -> UUID {
-        let layer = Layer(name: name, source: source)
+        var layer = Layer(name: name, source: source)
+        if let defaults = appSettings?.savedLayerDefaults[source.defaultsKey] {
+            defaults.apply(to: &layer)
+        }
         let scene = Scene(name: name ?? source.defaultName, layers: [layer])
         let cue = Cue(name: name ?? source.defaultName, sceneID: scene.id)
         show.scenes.append(scene)
@@ -280,11 +308,15 @@ final class ShowStore: NSObject {
         guard let scene = activeScene,
               let sceneIndex = show.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
 
-        let layer = Layer(
+        let source = Source.camera(deviceID: device.uniqueID)
+        var layer = Layer(
             name: device.name,
-            source: .camera(deviceID: device.uniqueID),
+            source: source,
             transform: ItemTransform(x: 0.5, y: 0.5, scaleX: 1.0, scaleY: 1.0, rotation: 0, crop: .zero)
         )
+        if let defaults = appSettings?.savedLayerDefaults[source.defaultsKey] {
+            defaults.apply(to: &layer)
+        }
         show.scenes[sceneIndex].layers.append(layer)
         selectedLayerID = layer.id
     }
@@ -292,7 +324,10 @@ final class ShowStore: NSObject {
     func addLayer(source: Source) {
         guard let scene = activeScene,
               let sceneIndex = show.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
-        let layer = Layer(source: source)
+        var layer = Layer(source: source)
+        if let defaults = appSettings?.savedLayerDefaults[source.defaultsKey] {
+            defaults.apply(to: &layer)
+        }
         show.scenes[sceneIndex].layers.append(layer)
         selectedLayerID = layer.id
     }
@@ -457,6 +492,30 @@ final class ShowStore: NSObject {
 
     /// Hardware control service (gimbal). Injected by the app root.
     var cameraControlService: CameraControlService?
+
+    /// App settings, injected by the app root, used to read/write layer defaults.
+    var appSettings: AppSettings?
+
+    /// Save the selected layer's transform, opacity, blend mode, filters, and
+    /// camera settings as the default starting point for its source.
+    func saveSelectedLayerAsDefault() {
+        guard let layer = selectedLayer else { return }
+        let defaults = LayerDefaults(sourceKey: layer.source.defaultsKey, layer: layer)
+        appSettings?.setLayerDefault(defaults)
+    }
+
+    /// Apply saved defaults for `source` to the layer with `id`, if any exist.
+    func applyLayerDefaults(to id: UUID, source: Source) {
+        guard let defaults = appSettings?.savedLayerDefaults[source.defaultsKey] else { return }
+        _ = mutateLayer(id: id) { layer in
+            defaults.apply(to: &layer)
+        }
+    }
+
+    /// Whether a default has been saved for this source.
+    func hasLayerDefault(for source: Source) -> Bool {
+        appSettings?.savedLayerDefaults[source.defaultsKey] != nil
+    }
 
     /// A snapshot of the selected layer's camera-relevant adjustments.
     func selectedLayerCameraSettings() -> CameraSettings {

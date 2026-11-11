@@ -56,5 +56,25 @@
 	<string>FreeStage needs microphone access to capture audio for recording and streaming.</string>
 	<key>UILaunchStoryboardName</key>
 	<string></string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>FreeStage Show</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.woodseedigi.freestage.show</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fst</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

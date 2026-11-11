@@ -19,6 +19,13 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
     var cameraPresets: [CameraPreset]
     /// Per-camera gimbal limit zones, keyed by AVCaptureDevice uniqueID.
     var cameraLimitZones: [String: CameraLimitZone]
+    /// Security-scoped bookmark data for file URLs referenced by layer sources.
+    /// Keyed by the URL's `absoluteString` at the time the bookmark was created.
+    var bookmarks: [String: Data]
+    /// Workspace UI/selection state restored when the show is reopened.
+    var workspace: WorkspaceState
+    /// Global graphic style used as the default for new template layers.
+    var style: ShowStyle
 
     init(
         id: UUID = UUID(),
@@ -27,7 +34,10 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         cues: [Cue] = [],
         globalLayers: [Layer] = [],
         cameraPresets: [CameraPreset] = [],
-        cameraLimitZones: [String: CameraLimitZone] = [:]
+        cameraLimitZones: [String: CameraLimitZone] = [:],
+        bookmarks: [String: Data] = [:],
+        workspace: WorkspaceState = WorkspaceState(),
+        style: ShowStyle = .default
     ) {
         self.id = id
         self.name = name
@@ -36,12 +46,15 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         self.globalLayers = globalLayers
         self.cameraPresets = cameraPresets
         self.cameraLimitZones = cameraLimitZones
+        self.bookmarks = bookmarks
+        self.workspace = workspace
+        self.style = style
     }
 
-    // MARK: - Codable (back-compat with shows saved before limit zones)
+    // MARK: - Codable (back-compat with shows saved before limit zones/bookmarks/workspace/style)
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, scenes, cues, globalLayers, cameraPresets, cameraLimitZones
+        case id, name, scenes, cues, globalLayers, cameraPresets, cameraLimitZones, bookmarks, workspace, style
     }
 
     init(from decoder: Decoder) throws {
@@ -53,10 +66,41 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         globalLayers = try container.decode([Layer].self, forKey: .globalLayers)
         cameraPresets = try container.decodeIfPresent([CameraPreset].self, forKey: .cameraPresets) ?? []
         cameraLimitZones = try container.decodeIfPresent([String: CameraLimitZone].self, forKey: .cameraLimitZones) ?? [:]
+        bookmarks = try container.decodeIfPresent([String: Data].self, forKey: .bookmarks) ?? [:]
+        workspace = try container.decodeIfPresent(WorkspaceState.self, forKey: .workspace) ?? WorkspaceState()
+        style = try container.decodeIfPresent(ShowStyle.self, forKey: .style) ?? .default
+    }
+
+    /// Resolve saved bookmarks and apply them to all file URLs in the show.
+    /// Should be called immediately after decoding a show from disk.
+    mutating func resolveBookmarks() {
+        for sceneIndex in scenes.indices {
+            for layerIndex in scenes[sceneIndex].layers.indices {
+                scenes[sceneIndex].layers[layerIndex].resolveBookmarks(using: bookmarks)
+            }
+        }
+        for layerIndex in globalLayers.indices {
+            globalLayers[layerIndex].resolveBookmarks(using: bookmarks)
+        }
+    }
+
+    /// Return a copy of the show with every file URL transformed by `map`.
+    /// Used when packaging assets for a portable show file.
+    func withFileURLs(_ map: (URL) -> URL) -> Show {
+        var copy = self
+        for sceneIndex in copy.scenes.indices {
+            for layerIndex in copy.scenes[sceneIndex].layers.indices {
+                copy.scenes[sceneIndex].layers[layerIndex].withFileURLs(map)
+            }
+        }
+        for layerIndex in copy.globalLayers.indices {
+            copy.globalLayers[layerIndex].withFileURLs(map)
+        }
+        return copy
     }
 
     /// Create a minimal show with a demo scene containing two color layers.
-    static func `default`() -> Show {
+    static func `default`(style: ShowStyle = .default) -> Show {
         let backgroundLayer = Layer(
             name: "Background",
             source: .color(CGColorComponents(r: 0.1, g: 0.1, b: 0.3, a: 1)),
@@ -84,7 +128,8 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
             scenes: [scene],
             cues: [cue],
             globalLayers: [],
-            cameraPresets: []
+            cameraPresets: [],
+            style: style
         )
     }
 

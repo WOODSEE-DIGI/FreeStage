@@ -19,19 +19,20 @@ extension UTType {
 
 @main
 struct FreeStageApp: App {
-    @State private var store = ShowStore()
-    @State private var captureManager = CameraCaptureManager()
-    @State private var screenCaptureManager = ScreenCaptureManager()
-    @State private var audioMixer = AudioMixer()
-    @State private var recordingService = RecordingService()
-    @State private var cameraControlService = CameraControlService()
-    @State private var goStreamController = GoStreamController()
-    @State private var appSettings = AppSettings()
-    @State private var cueTriggerServer = CueTriggerServer()
-    @State private var oscCueServer = OSCCueServer()
-    @State private var streamingService = StreamingService()
-    @State private var facePuppetTrackingService = FacePuppetTrackingService()
-    @StateObject private var virtualCamera = VirtualCameraOutputService()
+    @State private var store: ShowStore
+    @State private var captureManager: CameraCaptureManager
+    @State private var screenCaptureManager: ScreenCaptureManager
+    @State private var audioMixer: AudioMixer
+    @State private var recordingService: RecordingService
+    @State private var cameraControlService: CameraControlService
+    @State private var goStreamController: GoStreamController
+    @State private var appSettings: AppSettings
+    @State private var cueTriggerServer: CueTriggerServer
+    @State private var oscCueServer: OSCCueServer
+    @State private var streamingService: StreamingService
+    @State private var facePuppetTrackingService: FacePuppetTrackingService
+    @StateObject private var virtualCamera: VirtualCameraOutputService
+    @State private var themeStore: ThemeStore
     @State private var showScreenCapturePermissionAlert = false
 
     init() {
@@ -43,24 +44,55 @@ struct FreeStageApp: App {
             }
         }
 
+        let appSettings = AppSettings()
+        let themeStore = ThemeStore(settings: appSettings)
+        let audioMixer = AudioMixer()
+        let recordingService = RecordingService()
+        let cameraControlService = CameraControlService()
+        let captureManager = CameraCaptureManager()
+        let screenCaptureManager = ScreenCaptureManager()
+        let store = ShowStore()
+        let streamingService = StreamingService()
+        let goStreamController = GoStreamController()
+        let facePuppetTrackingService = FacePuppetTrackingService()
+        let virtualCamera = VirtualCameraOutputService()
+
         captureManager.cameraControlService = cameraControlService
         store.cameraControlService = cameraControlService
+        store.appSettings = appSettings
         screenCaptureManager.audioMixer = audioMixer
         screenCaptureManager.excludeDesktopIcons = appSettings.hideDesktopIconsDuringCapture
         recordingService.setAudioMixer(audioMixer)
         recordingService.configure(with: appSettings)
         streamingService.setAudioMixer(audioMixer)
-        let initialStore = store
-        cueTriggerServer = CueTriggerServer { [weak _store = initialStore] in
+
+        let cueTriggerServer = CueTriggerServer { [weak _store = store] in
             guard let store = _store else { return [] }
             return store.show.cues.map { CueSnapshot(cue: $0, sceneName: store.show.scene(withID: $0.sceneID)?.name ?? "") }
         }
+        let oscCueServer = OSCCueServer()
+
+        _store = State(wrappedValue: store)
+        _captureManager = State(wrappedValue: captureManager)
+        _screenCaptureManager = State(wrappedValue: screenCaptureManager)
+        _audioMixer = State(wrappedValue: audioMixer)
+        _recordingService = State(wrappedValue: recordingService)
+        _cameraControlService = State(wrappedValue: cameraControlService)
+        _goStreamController = State(wrappedValue: goStreamController)
+        _appSettings = State(wrappedValue: appSettings)
+        _cueTriggerServer = State(wrappedValue: cueTriggerServer)
+        _oscCueServer = State(wrappedValue: oscCueServer)
+        _streamingService = State(wrappedValue: streamingService)
+        _facePuppetTrackingService = State(wrappedValue: facePuppetTrackingService)
+        _virtualCamera = StateObject(wrappedValue: virtualCamera)
+        _themeStore = State(wrappedValue: themeStore)
     }
 
     var body: some SwiftUI.Scene {
         WindowGroup("FreeStage") {
             ContentView()
                 .environment(store)
+                .environment(themeStore)
                 .environment(\.cameraCaptureManager, captureManager)
                 .environment(\.screenCaptureManager, screenCaptureManager)
                 .environment(\.audioMixer, audioMixer)
@@ -89,6 +121,7 @@ struct FreeStageApp: App {
                 .task {
                     syncCueTriggerServer()
                     syncOSCCueServer()
+                    themeStore.applyInitialAppearance()
                 }
                 .onChange(of: appSettings.cueTriggerServerEnabled) {
                     syncCueTriggerServer()
@@ -114,7 +147,7 @@ struct FreeStageApp: App {
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New Show") {
-                    store.show = .default()
+                    store.show = .default(style: appSettings.defaultShowStyle)
                     store.resetWorkspace()
                 }
                 .keyboardShortcut("n", modifiers: .command)
@@ -176,6 +209,8 @@ struct FreeStageApp: App {
         Settings {
             SettingsView()
                 .environment(appSettings)
+                .environment(store)
+                .environment(themeStore)
         }
     }
 
@@ -188,11 +223,22 @@ struct FreeStageApp: App {
         panel.begin { result in
             guard result == .OK, let url = panel.url else { return }
             do {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let data = try encoder.encode(store.show)
-                try data.write(to: url, options: .atomic)
-                appLogger.info("Saved show to \(url.path)")
+                var showToSave = store.show
+                showToSave.workspace = WorkspaceState(
+                    activeCueID: store.activeCueID,
+                    liveCueID: store.liveCueID,
+                    selectedLayerID: store.selectedLayerID,
+                    selectedSceneID: store.selectedSceneID,
+                    isEditMode: store.isEditMode,
+                    mastheadVisible: store.mastheadVisible,
+                    sidebarVisible: store.sidebarVisible,
+                    inspectorVisible: store.inspectorVisible,
+                    panicDuration: store.panicDuration
+                )
+
+                let savedShow = try ShowPackage.write(showToSave, to: url)
+                store.show = savedShow
+                appLogger.info("Saved show package to \(url.path)")
             } catch {
                 appLogger.error("Failed to save show: \(error.localizedDescription)")
                 presentErrorAlert("Could not save show: \(error.localizedDescription)")
@@ -207,12 +253,10 @@ struct FreeStageApp: App {
         panel.begin { result in
             guard result == .OK, let url = panel.url else { return }
             do {
-                let data = try Data(contentsOf: url)
-                let show = try JSONDecoder().decode(Show.self, from: data)
+                let show = try ShowPackage.read(from: url)
                 DispatchQueue.main.async {
-                    store.show = show
-                    store.resetWorkspace()
-                    appLogger.info("Opened show from \(url.path)")
+                    store.load(show: show)
+                    appLogger.info("Opened show package from \(url.path)")
                 }
             } catch {
                 appLogger.error("Failed to open show: \(error.localizedDescription)")

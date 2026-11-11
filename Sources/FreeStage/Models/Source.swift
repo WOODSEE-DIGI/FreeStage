@@ -12,6 +12,7 @@ import CoreGraphics
 /// A concrete source of pixels for a layer.
 enum Source: Identifiable, Hashable, Codable, Sendable {
     case ndi(name: String)
+    case syphon(name: String, appName: String?, uuid: String?)
     case camera(deviceID: String)
     case screen(displayID: CGDirectDisplayID)
     case media(url: URL)
@@ -38,6 +39,8 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     var id: String {
         switch self {
         case .ndi(let name): return "ndi:\(name)"
+        case .syphon(let name, let appName, let uuid):
+            return "syphon:\(appName ?? ""):\(name):\(uuid ?? "")"
         case .camera(let id): return "camera:\(id)"
         case .screen(let id): return "screen:\(id)"
         case .media(let url): return "media:\(url.path)"
@@ -68,6 +71,8 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     var defaultName: String {
         switch self {
         case .ndi(let name): return name
+        case .syphon(let name, let appName, _):
+            return appName.map { "\($0) – \(name)" } ?? name
         case .camera: return "Camera"
         case .screen: return "Screen"
         case .media(let url): return url.deletingPathExtension().lastPathComponent
@@ -93,6 +98,41 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         }
     }
 
+    /// A stable key used to look up saved layer defaults for this source.
+    /// Cameras use their device ID, files use their URL path, and template
+    /// sources use their kind so new instances share the same default.
+    var defaultsKey: String {
+        switch self {
+        case .camera(let deviceID): return "camera:\(deviceID)"
+        case .screen(let displayID): return "screen:\(displayID)"
+        case .media(let url): return "media:\(url.path)"
+        case .image(let url): return "image:\(url.path)"
+        case .slideshow: return "slideshow"
+        case .browser: return "browser"
+        case .color: return "color"
+        case .text: return "text"
+        case .drawing: return "drawing"
+        case .border: return "template:border"
+        case .lowerThird: return "template:lowerThird"
+        case .chapterMarker: return "template:chapterMarker"
+        case .nextSection: return "template:nextSection"
+        case .socialBug: return "template:socialBug"
+        case .logoBug: return "template:logoBug"
+        case .countdownTimer: return "template:countdownTimer"
+        case .imageLogoBug: return "template:imageLogoBug"
+        case .ticker: return "template:ticker"
+        case .playlist: return "template:playlist"
+        case .ndi(let name): return "ndi:\(name)"
+        case .syphon(let name, let appName, _): return "syphon:\(appName ?? ""):\(name)"
+        case .facePuppet(let cameraID, let url):
+            return "facePuppet:\(cameraID):\(url.path)"
+        case .facePuppetAnchored(let cameraID, let url, _):
+            return "facePuppetAnchored:\(cameraID):\(url.path)"
+        case .facePuppetMesh(let cameraID, _):
+            return "facePuppetMesh:\(cameraID)"
+        }
+    }
+
     /// The anchor offsets for face-puppet sources, if any.
     var facePuppetAnchorMap: FacePuppetAnchorMap? {
         switch self {
@@ -101,6 +141,82 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
             return anchorMap
         default:
             return nil
+        }
+    }
+
+    /// All file URLs referenced by this source. Used when saving show files
+    /// to create security-scoped bookmarks for sandbox persistence.
+    func fileURLs() -> [URL] {
+        switch self {
+        case .media(let url), .image(let url):
+            return [url]
+        case .slideshow(let source):
+            return source.imageURLs
+        case .browser(let url, _, _):
+            return url.isFileURL ? [url] : []
+        case .facePuppet(_, let url), .facePuppetAnchored(_, let url, _):
+            return [url]
+        case .imageLogoBug(let source):
+            return source.imageURL.map { [$0] } ?? []
+        default:
+            return []
+        }
+    }
+
+    /// Return a copy of this source with file URLs resolved from saved
+    /// security-scoped bookmarks when available.
+    func resolvingBookmarks(using bookmarks: [String: Data]) -> Source {
+        func resolve(_ url: URL) -> URL {
+            guard let data = bookmarks[url.absoluteString],
+                  let resolved = SecurityScopedBookmark.resolve(data) else {
+                return url
+            }
+            return resolved
+        }
+
+        switch self {
+        case .media(let url):
+            return .media(url: resolve(url))
+        case .image(let url):
+            return .image(url: resolve(url))
+        case .slideshow(var source):
+            source.imageURLs = source.imageURLs.map(resolve)
+            return .slideshow(source)
+        case .browser(let url, let width, let height):
+            return .browser(url: resolve(url), width: width, height: height)
+        case .facePuppet(let cameraID, let url):
+            return .facePuppet(cameraID: cameraID, puppetImageURL: resolve(url))
+        case .facePuppetAnchored(let cameraID, let url, let anchorMap):
+            return .facePuppetAnchored(cameraID: cameraID, puppetImageURL: resolve(url), anchorMap: anchorMap)
+        case .imageLogoBug(var source):
+            source.imageURL = source.imageURL.map(resolve)
+            return .imageLogoBug(source)
+        default:
+            return self
+        }
+    }
+
+    /// Return a copy of this source with every file URL transformed by `map`.
+    func withFileURLs(_ map: (URL) -> URL) -> Source {
+        switch self {
+        case .media(let url):
+            return .media(url: map(url))
+        case .image(let url):
+            return .image(url: map(url))
+        case .slideshow(var source):
+            source.imageURLs = source.imageURLs.map(map)
+            return .slideshow(source)
+        case .browser(let url, let width, let height):
+            return .browser(url: map(url), width: width, height: height)
+        case .facePuppet(let cameraID, let url):
+            return .facePuppet(cameraID: cameraID, puppetImageURL: map(url))
+        case .facePuppetAnchored(let cameraID, let url, let anchorMap):
+            return .facePuppetAnchored(cameraID: cameraID, puppetImageURL: map(url), anchorMap: anchorMap)
+        case .imageLogoBug(var source):
+            source.imageURL = source.imageURL.map(map)
+            return .imageLogoBug(source)
+        default:
+            return self
         }
     }
 

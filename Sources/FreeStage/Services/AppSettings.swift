@@ -31,6 +31,10 @@ final class AppSettings: @unchecked Sendable {
         case recordingAutoSplitMinutes
         case recordingMinFreeSpaceMB
         case hideDesktopIconsDuringCapture
+        case savedLayerDefaults
+        case showStyles
+        case selectedShowStyleID
+        case appThemeID
     }
 
     /// Recording container format + codec.
@@ -230,6 +234,79 @@ final class AppSettings: @unchecked Sendable {
         formatter.formatOptions = [.withInternetDateTime]
         let name = "FreeStage-\(formatter.string(from: Date())).\(recordingFormat.fileExtension)"
         return recordingDirectory.appendingPathComponent(name)
+    }
+
+    /// Layer defaults keyed by `Source.defaultsKey`. These are applied
+    /// automatically when a layer with a matching source is added.
+    var savedLayerDefaults: [String: LayerDefaults] {
+        get {
+            guard let data = defaults.data(forKey: Key.savedLayerDefaults.rawValue),
+                  let decoded = try? JSONDecoder().decode([String: LayerDefaults].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.savedLayerDefaults.rawValue)
+            }
+        }
+    }
+
+    /// Replace or insert a default for the given source key.
+    func setLayerDefault(_ layerDefault: LayerDefaults) {
+        var defaults = savedLayerDefaults
+        defaults[layerDefault.sourceKey] = layerDefault
+        savedLayerDefaults = defaults
+    }
+
+    /// Remove a saved default for a source key.
+    func removeLayerDefault(for sourceKey: String) {
+        var defaults = savedLayerDefaults
+        defaults.removeValue(forKey: sourceKey)
+        savedLayerDefaults = defaults
+    }
+
+    // MARK: - Show styles
+
+    /// Saved show-style presets. New shows can pick one of these as their
+    /// default graphic look.
+    var showStyles: [ShowStyle] {
+        get {
+            guard let data = defaults.data(forKey: Key.showStyles.rawValue),
+                  let decoded = try? JSONDecoder().decode([ShowStyle].self, from: data) else {
+                return ShowStyle.allBuiltIns
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.showStyles.rawValue)
+            }
+        }
+    }
+
+    var selectedShowStyleID: String? {
+        get { defaults.string(forKey: Key.selectedShowStyleID.rawValue) }
+        set { defaults.set(newValue, forKey: Key.selectedShowStyleID.rawValue) }
+    }
+
+    /// The show style that should be used for new shows.
+    var defaultShowStyle: ShowStyle {
+        guard let idString = selectedShowStyleID,
+              let id = UUID(uuidString: idString),
+              let style = showStyles.first(where: { $0.id == id }) else {
+            return ShowStyle.default
+        }
+        return style
+    }
+
+    // MARK: - App theme
+
+    /// Identifier of the selected FreeStage UI theme.
+    var appThemeID: String? {
+        get { defaults.string(forKey: Key.appThemeID.rawValue) }
+        set { defaults.set(newValue, forKey: Key.appThemeID.rawValue) }
     }
 }
 

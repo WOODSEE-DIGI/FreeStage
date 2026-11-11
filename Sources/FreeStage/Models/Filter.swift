@@ -31,6 +31,53 @@ enum Filter: Identifiable, Hashable, Codable, Sendable {
         case .aiKeyer: return "AI Keyer"
         }
     }
+
+    /// Resolve security-scoped bookmarks for any file URLs referenced by this
+    /// filter (e.g., a chroma-key background image).
+    mutating func resolveBookmarks(using bookmarks: [String: Data]) {
+        switch self {
+        case .chromaKey(var filter):
+            filter.resolveBookmarks(using: bookmarks)
+            self = .chromaKey(filter)
+        default:
+            break
+        }
+    }
+
+    /// Transform every file URL referenced by this filter.
+    mutating func withFileURLs(_ map: (URL) -> URL) {
+        switch self {
+        case .chromaKey(var filter):
+            filter.withFileURLs(map)
+            self = .chromaKey(filter)
+        default:
+            break
+        }
+    }
+}
+
+enum ChromaKeyColorPreset: String, CaseIterable, Identifiable, Codable, Sendable {
+    case green
+    case blue
+    case custom
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .green: return "Green Screen"
+        case .blue: return "Blue Screen"
+        case .custom: return "Custom"
+        }
+    }
+
+    var baseColor: RGBColor {
+        switch self {
+        case .green: return RGBColor(r: 0, g: 1, b: 0)
+        case .blue: return RGBColor(r: 0, g: 0, b: 1)
+        case .custom: return RGBColor(r: 0, g: 1, b: 0)
+        }
+    }
 }
 
 struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
@@ -39,6 +86,12 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
     /// controls can remain visible (and editable) even when the effect is
     /// temporarily disabled.
     var isEnabled: Bool
+    /// Quick preset for the most common key colors. `.custom` leaves the
+    /// keyColors array untouched.
+    var keyColorPreset: ChromaKeyColorPreset
+    /// Hue rotation applied to the key colors in the shader, in radians.
+    /// Range -π...π.
+    var hueShift: Double
     /// Sampled key colors. The first color is the primary key; additional
     /// colors allow multi-point sampling (e.g. uneven green screens).
     var keyColors: [RGBColor]
@@ -66,6 +119,8 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
     init(
         id: UUID = UUID(),
         isEnabled: Bool = true,
+        keyColorPreset: ChromaKeyColorPreset = .green,
+        hueShift: Double = 0,
         keyColors: [RGBColor] = [RGBColor(r: 0, g: 1, b: 0)],
         threshold: Double = 0.35,
         smoothing: Double = 0.08,
@@ -80,6 +135,8 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
     ) {
         self.id = id
         self.isEnabled = isEnabled
+        self.keyColorPreset = keyColorPreset
+        self.hueShift = hueShift
         self.keyColors = keyColors
         self.threshold = threshold
         self.smoothing = smoothing
@@ -94,7 +151,7 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, isEnabled, keyColors, threshold, smoothing
+        case id, isEnabled, keyColorPreset, hueShift, keyColors, threshold, smoothing
         case edgeFeather, spillSuppression, spillRange
         case edgeDespill, skinToneProtection, bypass, backgroundSource
         case backgroundTransform
@@ -104,6 +161,8 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(UUID.self, forKey: .id)
         self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        self.keyColorPreset = try container.decodeIfPresent(ChromaKeyColorPreset.self, forKey: .keyColorPreset) ?? .green
+        self.hueShift = try container.decodeIfPresent(Double.self, forKey: .hueShift) ?? 0
         self.keyColors = try container.decodeIfPresent([RGBColor].self, forKey: .keyColors)
             ?? [RGBColor(r: 0, g: 1, b: 0)]
         self.threshold = try container.decodeIfPresent(Double.self, forKey: .threshold) ?? 0.35
@@ -122,6 +181,8 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(keyColorPreset, forKey: .keyColorPreset)
+        try container.encode(hueShift, forKey: .hueShift)
         try container.encode(keyColors, forKey: .keyColors)
         try container.encode(threshold, forKey: .threshold)
         try container.encode(smoothing, forKey: .smoothing)
@@ -135,6 +196,34 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
         try container.encode(backgroundTransform, forKey: .backgroundTransform)
     }
 
+    /// Effective key colors with hue shift applied. Used by the shader.
+    var effectiveKeyColors: [RGBColor] {
+        keyColors.map { rotateHue($0, by: hueShift) }
+    }
+
+    /// Apply the preset, resetting hueShift and setting the base key color.
+    mutating func applyPreset(_ preset: ChromaKeyColorPreset) {
+        keyColorPreset = preset
+        hueShift = 0
+        if preset != .custom {
+            keyColors = [preset.baseColor]
+        }
+    }
+
+    /// Resolve security-scoped bookmarks for the optional background source.
+    mutating func resolveBookmarks(using bookmarks: [String: Data]) {
+        guard var source = backgroundSource else { return }
+        source = source.resolvingBookmarks(using: bookmarks)
+        backgroundSource = source
+    }
+
+    /// Transform file URLs in the optional background source.
+    mutating func withFileURLs(_ map: (URL) -> URL) {
+        guard var source = backgroundSource else { return }
+        source = source.withFileURLs(map)
+        backgroundSource = source
+    }
+
     /// Convenience accessor for the primary key color.
     var keyColor: RGBColor {
         get { keyColors.first ?? RGBColor(r: 0, g: 1, b: 0) }
@@ -146,6 +235,28 @@ struct ChromaKeyFilter: Identifiable, Hashable, Codable, Sendable {
             }
         }
     }
+}
+
+private func rotateHue(_ color: RGBColor, by angle: Double) -> RGBColor {
+    let cosA = cos(angle)
+    let sinA = sin(angle)
+    let r = color.r
+    let g = color.g
+    let b = color.b
+    let newR = r * (0.299 + 0.701 * cosA + 0.168 * sinA)
+             + g * (0.587 - 0.587 * cosA + 0.330 * sinA)
+             + b * (0.114 - 0.114 * cosA - 0.497 * sinA)
+    let newG = r * (0.299 - 0.299 * cosA - 0.328 * sinA)
+             + g * (0.587 + 0.413 * cosA + 0.035 * sinA)
+             + b * (0.114 - 0.114 * cosA + 0.292 * sinA)
+    let newB = r * (0.299 - 0.300 * cosA + 1.250 * sinA)
+             + g * (0.587 - 0.588 * cosA - 1.050 * sinA)
+             + b * (0.114 + 0.886 * cosA - 0.203 * sinA)
+    return RGBColor(
+        r: max(0, min(1, newR)),
+        g: max(0, min(1, newG)),
+        b: max(0, min(1, newB))
+    )
 }
 
 struct ColorCorrectionFilter: Identifiable, Hashable, Codable, Sendable {

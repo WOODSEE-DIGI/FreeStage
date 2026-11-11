@@ -10,6 +10,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.cameraCaptureManager) private var captureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
 
@@ -50,6 +51,7 @@ struct ContentView: View {
             FooterView()
         }
         .frame(minWidth: 1400, minHeight: 900)
+        .background(theme.background)
         .background(WindowFrameInitializer(minSize: NSSize(width: 1400, height: 900)))
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture(manager: manager, requiredIDs: requiredCameraIDs)

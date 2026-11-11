@@ -18,5 +18,28 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>info.v002.Syphon.*</string>
+		<string>com.newtek.NDIAssistant</string>
+	</array>
+	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
+	<array>
+		<string>info.v002.Syphon.*</string>
+	</array>
+	<key>com.apple.security.temporary-exception.distributed-notification.post</key>
+	<array>
+		<string>info.v002.Syphon.ServerAnnounce</string>
+		<string>info.v002.Syphon.ServerRetire</string>
+		<string>info.v002.Syphon.ServerUpdate</string>
+	</array>
+	<key>com.apple.security.temporary-exception.distributed-notification.register</key>
+	<array>
+		<string>info.v002.Syphon.ServerAnnounce</string>
+		<string>info.v002.Syphon.ServerRetire</string>
+		<string>info.v002.Syphon.ServerUpdate</string>
+	</array>
 </dict>
 </plist>

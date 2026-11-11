@@ -10,6 +10,7 @@ import SwiftUI
 
 struct StageMonitorView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.cameraCaptureManager) private var captureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
     @Environment(\.virtualCameraOutputService) private var virtualCamera
@@ -41,7 +42,7 @@ struct StageMonitorView: View {
                 )
                 .aspectRatio(16 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+                .background(theme.monitorBackground)
                 .overlay(
                     Group {
                         if isEditable {
@@ -50,11 +51,11 @@ struct StageMonitorView: View {
                     }
                 )
             } else {
-                Color.black
+                theme.monitorBackground
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(
                         Text("Capture managers not available")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     )
             }
 
@@ -66,21 +67,22 @@ struct StageMonitorView: View {
         HStack {
             HStack(spacing: 6) {
                 Image(systemName: isLive ? "record.circle" : "eye")
-                    .foregroundStyle(isLive ? .red : .accentColor)
+                    .foregroundStyle(isLive ? .red : theme.accent)
                 Text(title)
                     .font(.headline)
+                    .foregroundStyle(theme.text)
             }
 
             Spacer()
 
             Text(scene?.name ?? "No Scene")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.secondaryText)
                 .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
     }
 
     private var monitorFooter: some View {
@@ -89,13 +91,13 @@ struct StageMonitorView: View {
                 + store.show.globalLayers.filter(\.isVisible).count
             Text("\(visibleCount) visible layer(s)")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.secondaryText)
 
             Spacer()
 
             Text("\(fpsCounter.fps, specifier: "%.0f") fps")
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(fpsCounter.fps < 20 ? .red : .secondary)
+                .foregroundStyle(fpsCounter.fps < 20 ? .red : theme.secondaryText)
 
             if isLive {
                 Text("LIVE")
@@ -104,12 +106,12 @@ struct StageMonitorView: View {
             } else {
                 Text("PREVIEW")
                     .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
     }
 }
 

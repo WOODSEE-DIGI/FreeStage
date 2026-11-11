@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 struct LayerEditorView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.cameraCaptureManager) private var captureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
     @State private var isAddingCamera = false
@@ -18,6 +19,8 @@ struct LayerEditorView: View {
     @State private var isAddingSlideshow = false
     @State private var isAddingImage = false
     @State private var isAddingVideo = false
+    @State private var isAddingSyphon = false
+    @State private var isAddingNDI = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,10 +88,10 @@ struct LayerEditorView: View {
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "arrow.up")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                         Text("Select a layer above to edit its source, position, and filters such as Chroma Key.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                             .multilineTextAlignment(.center)
                     }
                     .padding()
@@ -96,12 +99,12 @@ struct LayerEditorView: View {
                 }
             } else {
                 Text("No cue selected")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
         .sheet(isPresented: $isAddingCamera) {
             CameraPickerSheet { device in
                 addLayer(source: .camera(deviceID: device.uniqueID), name: device.name)
@@ -147,6 +150,16 @@ struct LayerEditorView: View {
                 break
             }
         }
+        .sheet(isPresented: $isAddingSyphon) {
+            SyphonPickerSheet { source in
+                addLayer(source: source, name: source.defaultName)
+            }
+        }
+        .sheet(isPresented: $isAddingNDI) {
+            NDIPickerSheet { source in
+                addLayer(source: source, name: source.defaultName)
+            }
+        }
     }
 
     private var layerList: some View {
@@ -155,7 +168,7 @@ struct LayerEditorView: View {
                 HStack {
                     Text("Layers in this scene. Select one to edit it.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
 
                     Spacer()
 
@@ -170,6 +183,7 @@ struct LayerEditorView: View {
                         Section("Show Layers") {
                             ForEach(store.show.globalLayers) { layer in
                                 layerRow(layer: layer, isGlobal: true)
+                                    .listRowBackground(theme.panelBackground)
                             }
                             .onMove(perform: store.moveGlobalLayer)
                         }
@@ -179,11 +193,13 @@ struct LayerEditorView: View {
                         Section("Cue Layers") {
                             ForEach(scene.layers) { layer in
                                 layerRow(layer: layer, isGlobal: false)
+                                    .listRowBackground(theme.panelBackground)
                             }
                             .onMove(perform: store.moveLayerInActiveScene)
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
                 .frame(minHeight: 100, maxHeight: 160)
                 .environment(\.defaultMinListRowHeight, 26)
             }
@@ -195,6 +211,8 @@ struct LayerEditorView: View {
         Menu {
             Button("Camera…") { isAddingCamera = true }
             Button("Screen…") { isAddingScreen = true }
+            Button("Syphon…") { isAddingSyphon = true }
+            Button("NDI…") { isAddingNDI = true }
             Button("Face Puppet…") { beginAddingFacePuppet() }
             Button("Face Puppet Mesh…") { beginAddingFacePuppetMesh() }
             Button("Image…") { isAddingImage = true }
@@ -204,15 +222,15 @@ struct LayerEditorView: View {
             Button("Slideshow…") { isAddingSlideshow = true }
             Button("Draw") { addLayer(source: .drawing(DrawingSource()), name: "Drawing") }
             Divider()
-            Button("Border") { addLayer(source: .border(BorderSource()), name: "Border") }
-            Button("Lower Third") { addLayer(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
-            Button("Chapter Marker") { addLayer(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
-            Button("Next Section") { addLayer(source: .nextSection(NextSectionSource()), name: "Next Section") }
-            Button("Social Bug") { addLayer(source: .socialBug(SocialBugSource()), name: "Social Bug") }
-            Button("Logo Bug") { addLayer(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
-            Button("Countdown") { addLayer(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
+            Button("Border") { addStyledLayer(source: .border(BorderSource()), name: "Border") }
+            Button("Lower Third") { addStyledLayer(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
+            Button("Chapter Marker") { addStyledLayer(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
+            Button("Next Section") { addStyledLayer(source: .nextSection(NextSectionSource()), name: "Next Section") }
+            Button("Social Bug") { addStyledLayer(source: .socialBug(SocialBugSource()), name: "Social Bug") }
+            Button("Logo Bug") { addStyledLayer(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
+            Button("Countdown") { addStyledLayer(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
             Button("Image Logo Bug") { addLayer(source: .imageLogoBug(ImageLogoBugSource()), name: "Image Logo Bug") }
-            Button("Ticker") { addLayer(source: .ticker(TickerSource()), name: "Ticker") }
+            Button("Ticker") { addStyledLayer(source: .ticker(TickerSource()), name: "Ticker") }
             Button("Playlist") { addLayer(source: .playlist(PlaylistSource()), name: "Playlist") }
         } label: {
             Label("Add Layer", systemImage: "plus")
@@ -227,7 +245,12 @@ struct LayerEditorView: View {
               let sceneIndex = store.show.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
         let layer = Layer(name: name, source: source)
         store.show.scenes[sceneIndex].layers.append(layer)
+        store.applyLayerDefaults(to: layer.id, source: source)
         store.selectLayer(id: layer.id)
+    }
+
+    private func addStyledLayer(source: Source, name: String) {
+        addLayer(source: source.applying(store.show.style), name: name)
     }
 
     private func beginAddingFacePuppet() {
@@ -292,7 +315,7 @@ struct LayerEditorView: View {
                 store.setLayerVisible(id: layer.id, isVisible: !layer.isVisible)
             } label: {
                 Image(systemName: layer.isVisible ? "eye" : "eye.slash")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
             }
             .buttonStyle(.plain)
             .help(layer.isVisible ? "Hide layer" : "Show layer")
@@ -302,7 +325,7 @@ struct LayerEditorView: View {
             if isGlobal {
                 Image(systemName: "globe")
                     .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(theme.accent)
             }
             Spacer()
         }
@@ -319,7 +342,7 @@ struct LayerEditorView: View {
                             .lineLimit(1)
                         Text(layer.source.defaultName)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     }
 
                     Spacer()
@@ -333,6 +356,12 @@ struct LayerEditorView: View {
 
                 AdjustmentSlider("X", value: layer.transform.x, range: 0...1, defaultValue: 0.5) { newValue in store.updateSelectedLayer { $0.transform.x = newValue } }
                 AdjustmentSlider("Y", value: layer.transform.y, range: 0...1, defaultValue: 0.5) { newValue in store.updateSelectedLayer { $0.transform.y = newValue } }
+                AdjustmentSlider("Size", value: uniformScale(for: layer.transform), range: 0.01...3.0, defaultValue: 1.0) { newValue in
+                    store.updateSelectedLayer {
+                        $0.transform.scaleX = newValue
+                        $0.transform.scaleY = newValue
+                    }
+                }
                 AdjustmentSlider("Width", value: layer.transform.scaleX, range: 0.01...2.0, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.transform.scaleX = newValue } }
                 AdjustmentSlider("Height", value: layer.transform.scaleY, range: 0.01...2.0, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.transform.scaleY = newValue } }
                 AdjustmentSlider("Opacity", value: layer.opacity, range: 0...1, defaultValue: 1.0) { newValue in store.updateSelectedLayer { $0.opacity = newValue } }
@@ -357,7 +386,7 @@ struct LayerEditorView: View {
 
                     Text("Removes a solid color background from this layer (e.g., a green-screen camera).")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
                 }
 
                 ChromaKeyControlsView()
@@ -383,6 +412,15 @@ struct LayerEditorView: View {
                         Label(
                             store.isSelectedLayerGlobal ? "Make Cue Layer" : "Make Show Layer",
                             systemImage: store.isSelectedLayerGlobal ? "doc" : "globe"
+                        )
+                    }
+
+                    Button {
+                        store.saveSelectedLayerAsDefault()
+                    } label: {
+                        Label(
+                            store.hasLayerDefault(for: layer.source) ? "Update Default" : "Save as Default",
+                            systemImage: "star"
                         )
                     }
 
@@ -427,5 +465,13 @@ struct LayerEditorView: View {
             }
         }
         .pickerStyle(.menu)
+    }
+
+    /// Returns a single scale value for the Size slider. When width and height
+    /// are identical (the normal case), it returns that value; otherwise it
+    /// returns the average so the slider still reflects the layer's overall
+    /// scale. Dragging the Size slider sets both axes to the same value.
+    private func uniformScale(for transform: ItemTransform) -> Double {
+        (transform.scaleX + transform.scaleY) / 2.0
     }
 }

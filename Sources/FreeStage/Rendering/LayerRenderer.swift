@@ -123,7 +123,7 @@ private struct FilterParams {
     var bgPositionX: Float
     var bgPositionY: Float
     var bgZoom: Float
-    var bgPad: Float
+    var hueShift: Float
 
     init(layer: Layer) {
         var flags: UInt32 = 0
@@ -151,6 +151,7 @@ private struct FilterParams {
         var bgPositionX: Float = 0.5
         var bgPositionY: Float = 0.5
         var bgZoom: Float = 1.0
+        var hueShift: Float = 0.0
 
         for filter in layer.filters {
             switch filter {
@@ -175,6 +176,7 @@ private struct FilterParams {
                 bgPositionX = Float(f.backgroundTransform.x)
                 bgPositionY = Float(f.backgroundTransform.y)
                 bgZoom = Float(max(f.backgroundTransform.scaleX, 0.01))
+                hueShift = Float(f.hueShift)
             case .colorCorrection(let f):
                 flags |= 1
                 ccBrightness = Float(f.brightness)
@@ -213,7 +215,7 @@ private struct FilterParams {
         self.bgPositionX = bgPositionX
         self.bgPositionY = bgPositionY
         self.bgZoom = bgZoom
-        self.bgPad = 0
+        self.hueShift = hueShift
     }
 }
 

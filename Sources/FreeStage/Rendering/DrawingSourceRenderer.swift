@@ -259,6 +259,13 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
             .foregroundColor: NSColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
         ]
         let attributed = NSAttributedString(string: text, attributes: attributes)
+
+        // NSAttributedString.draw(at:) requires an NSGraphicsContext to be
+        // current when drawing into a manually created CGContext.
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsContext
         attributed.draw(at: location)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }

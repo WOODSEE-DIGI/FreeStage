@@ -127,67 +127,96 @@ struct ChromaKeyControlsView: View {
 
     @ViewBuilder
     private func keyColorSection(filter: ChromaKeyFilter) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Key Colors")
-                    .font(.caption)
+                Text("Key Color")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(filter.keyColors.count)/4")
+            }
+
+            HStack(spacing: 8) {
+                ForEach(ChromaKeyColorPreset.allCases) { preset in
+                    Button {
+                        store.updateSelectedLayerChromaKey { $0.applyPreset(preset) }
+                    } label: {
+                        Text(preset.displayName)
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(filter.keyColorPreset == preset ? Color.accentColor : Color.gray.opacity(0.25))
+                            .foregroundStyle(filter.keyColorPreset == preset ? .white : .primary)
+                            .clipShape(.rect(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            AdjustmentSlider("Hue Shift", value: filter.hueShift, range: (-Double.pi / 2)...(Double.pi / 2), defaultValue: 0) { newValue in
+                store.updateSelectedLayerChromaKey { $0.hueShift = newValue }
+            }
+
+            if filter.keyColorPreset == .custom {
+                HStack {
+                    Text("Custom")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+                ForEach(0..<filter.keyColors.count, id: \.self) { index in
+                    HStack {
+                        Text("Color \(index + 1)")
+                            .font(.caption2)
+                        Spacer()
+                        ColorPicker("", selection: Binding(
+                            get: { Color(rgb: filter.keyColors[index]) },
+                            set: { newColor in
+                                let rgb = RGBColor(color: newColor)
+                                store.updateSelectedLayerChromaKey { filter in
+                                    guard index < filter.keyColors.count else { return }
+                                    filter.keyColors[index] = rgb
+                                }
+                            }
+                        ))
+                        .labelsHidden()
+                        .frame(width: 44)
+
+                        if filter.keyColors.count > 1 {
+                            Button {
+                                store.updateSelectedLayerChromaKey { filter in
+                                    guard index < filter.keyColors.count else { return }
+                                    filter.keyColors.remove(at: index)
+                                }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove this key color")
+                        }
+                    }
+                }
+
+                if filter.keyColors.count < 4 {
+                    Button {
+                        store.updateSelectedLayerChromaKey { filter in
+                            let base = filter.keyColors.first ?? RGBColor(r: 0, g: 1, b: 0)
+                            filter.keyColors.append(base)
+                        }
+                    } label: {
+                        Label("Add Key Color", systemImage: "plus.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.top, 2)
+                }
+
+                Text("Add extra colors to sample uneven screen highlights and shadows.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-
-            ForEach(0..<filter.keyColors.count, id: \.self) { index in
-                HStack {
-                    Text("Color \(index + 1)")
-                        .font(.caption2)
-                    Spacer()
-                    ColorPicker("", selection: Binding(
-                        get: { Color(rgb: filter.keyColors[index]) },
-                        set: { newColor in
-                            let rgb = RGBColor(color: newColor)
-                            store.updateSelectedLayerChromaKey { filter in
-                                guard index < filter.keyColors.count else { return }
-                                filter.keyColors[index] = rgb
-                            }
-                        }
-                    ))
-                    .labelsHidden()
-                    .frame(width: 44)
-
-                    if filter.keyColors.count > 1 {
-                        Button {
-                            store.updateSelectedLayerChromaKey { filter in
-                                guard index < filter.keyColors.count else { return }
-                                filter.keyColors.remove(at: index)
-                            }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove this key color")
-                    }
-                }
-            }
-
-            if filter.keyColors.count < 4 {
-                Button {
-                    store.updateSelectedLayerChromaKey { filter in
-                        let base = filter.keyColors.first ?? RGBColor(r: 0, g: 1, b: 0)
-                        filter.keyColors.append(base)
-                    }
-                } label: {
-                    Label("Add Key Color", systemImage: "plus.circle")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .padding(.top, 2)
-            }
-
-            Text("Add extra colors to sample green-screen highlights and shadows.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }

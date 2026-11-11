@@ -19,6 +19,7 @@
             <li><a href="#workspace">Workspace</a></li>
             <li><a href="#modes">Edit & Show</a></li>
             <li><a href="#scenes">Scenes</a></li>
+            <li><a href="#sources">Sources</a></li>
             <li><a href="#cues">Cues</a></li>
             <li><a href="#go">GO & STOP</a></li>
             <li><a href="#recording">Recording</a></li>
@@ -29,6 +30,7 @@
             <li><a href="#shapes">Shapes &amp; Text</a></li>
             <li><a href="#audio">Audio</a></li>
             <li><a href="#external">External Control</a></li>
+            <li><a href="#themes">UI Themes</a></li>
             <li><a href="#settings">Settings</a></li>
         </ul>
     </nav>
@@ -77,6 +79,51 @@
                 <li>Right-click a scene to <strong>Add Cue for Scene</strong>, <strong>Duplicate Scene</strong>, or <strong>Delete Scene</strong>.</li>
                 <li>Deleting a scene also deletes any cues that reference it.</li>
             </ul>
+
+            <h3>Layer Transforms</h3>
+            <p>Select a layer in the Layer Editor to adjust its position, size, and opacity.</p>
+            <ul>
+                <li><strong>X / Y</strong> — move the layer center around the canvas (0–1, normalized).</li>
+                <li><strong>Size</strong> — scale the layer uniformly. This is the quickest way to zoom a source in or out.</li>
+                <li><strong>Width / Height</strong> — scale each axis independently. Use these to stretch or fit a source to a non-standard frame.</li>
+                <li><strong>Opacity</strong> — fade the layer.</li>
+                <li><strong>Fit to Canvas</strong> — reset position and scale to fill the output.</li>
+            </ul>
+        </section>
+
+        <section id="sources">
+            <h2>Sources</h2>
+            <p>Each layer in a scene is backed by a source. FreeStage supports cameras, screen captures, still images, video files, slideshows, browser sources, color fills, text, drawing, template overlays, and shared-memory video feeds.</p>
+
+            <h3>Syphon Input</h3>
+            <p>FreeStage can receive a live video feed from any Syphon server running on the same Mac. This is useful for pulling output from VJ software, Resolume, TouchDesigner, or another production tool into a FreeStage layer.</p>
+            <ul>
+                <li>In the Layer Editor, choose <strong>Add Layer → Syphon…</strong>.</li>
+                <li>The picker shows every Syphon server currently published on the Mac.</li>
+                <li>Select a server and click <strong>Add Layer</strong>. FreeStage stores the server's unique ID so it reconnects automatically if the server restarts.</li>
+                <li>Transform, chroma key, and filters work on a Syphon layer just like any other source.</li>
+            </ul>
+
+            <h3>NDI Input</h3>
+            <p>FreeStage can also receive NDI sources from the local machine or the local network.</p>
+            <ul>
+                <li>In the Layer Editor, choose <strong>Add Layer → NDI…</strong>.</li>
+                <li>The picker shows every NDI source currently visible on the network.</li>
+                <li>Select a source and click <strong>Add Layer</strong>. FreeStage reconnects by source name.</li>
+                <li>NDI video is decoded to BGRA and can be transformed, keyed, and filtered like any other layer.</li>
+            </ul>
+            <div class="tip">
+                <p><strong>Note:</strong> NDI input links against the NDI runtime (<code>libndi.dylib</code>) installed on this Mac. The SDK headers are bundled under <code>Vendor/NDI</code> and subject to the NDI SDK license.</p>
+            </div>
+
+            <h3>Layer Defaults</h3>
+            <p>FreeStage can remember a layer's transform, opacity, blend mode, filters, and camera settings as the default starting point for a source.</p>
+            <ul>
+                <li>Configure a layer exactly how you want it (e.g., green-screen chroma key, size, and position).</li>
+                <li>Click <strong>Save as Default</strong> in the Layer inspector. The button becomes <strong>Update Default</strong> if one already exists.</li>
+                <li>Whenever you add that same source again — from the Layer Editor or the Add Cue menu — FreeStage applies the saved defaults automatically.</li>
+                <li>Defaults are keyed by source: per camera, per NDI/Syphon source, per file, or per template type.</li>
+            </ul>
         </section>
 
         <section id="cues">
@@ -87,6 +134,17 @@
                 <li>Right-click a cue to <strong>Fire Cue</strong> directly, <strong>Select as Next</strong>, or <strong>Duplicate Cue</strong>.</li>
                 <li>Duplicate a cue to reuse the same scene in another place in the rundown.</li>
                 <li>Toggle <strong>Armed</strong> in the inspector to disable a cue. Disarmed cues cannot be fired.</li>
+            </ul>
+        </section>
+
+        <section id="saving">
+            <h2>Saving Shows</h2>
+            <p>Use <span class="keyboard">Cmd S</span> to save your show as a <code>.fst</code> file. FreeStage stores shows as <strong>document packages</strong>: a folder that looks like a single file in Finder and contains the show JSON plus an <code>Assets/</code> folder.</p>
+            <ul>
+                <li>Every image, video, slideshow image, face-puppet image, and chroma-key background is <strong>copied into the package</strong>.</li>
+                <li>Shows are fully portable: you can move, rename, copy, or archive the <code>.fst</code> package without losing linked files.</li>
+                <li>The active cue, selected layer/scene, edit/show mode, and panel visibility are also saved and restored.</li>
+                <li>Older single-file <code>.fst</code> documents can still be opened; saving them again converts them to the new package format.</li>
             </ul>
         </section>
 
@@ -166,7 +224,7 @@
             <ul>
                 <li><strong>Rectangle / Ellipse</strong> — click and drag to define the bounding box.</li>
                 <li><strong>Line / Arrow</strong> — click and drag from start to end; Arrow adds a head at the end point.</li>
-                <li><strong>Text</strong> — select the Text tool and click where you want the label, then type in the prompt. Text size is controlled by the Width slider.</li>
+                <li><strong>Text</strong> — select the Text tool and click where you want the label, then type in the prompt. Text size is controlled by the Size or Width slider.</li>
                 <li>All shapes and text use the current color and line width.</li>
             </ul>
         </section>
@@ -220,6 +278,21 @@ curl http://localhost:17352/cues</code></pre>
             <p>Right-click any cue and choose <strong>Copy OSC Trigger Address</strong>.</p>
         </section>
 
+        <section id="themes">
+            <h2>UI Themes</h2>
+            <p>FreeStage can change the colours of its window chrome (panels, masthead, footer, and monitor borders) to match your studio or personal preference.</p>
+            <ul>
+                <li>Open <strong>Settings → App Theme</strong> and choose a preset from the shared WOODSEE-DIGI swatch collection.</li>
+                <li>Available presets include System Default, Matrix Dark/Light, Cyberpunk Neon Dark/Light, Hello Kitty Pinks, Rainbows and Unicorns, Clean and Minimal, Professional, btop Tokyo Night, btop Nord Dark/Light, btop Solarized Dark/Light, btop One Dark, and btop Monokai.</li>
+                <li>Each theme also sets the app's light/dark appearance, so the whole window stays consistent.</li>
+                <li>The theme is saved automatically and applies to every FreeStage window.</li>
+                <li>The video monitors keep a slightly different background so the Program and Preview outputs remain clearly separated from the chrome.</li>
+            </ul>
+            <div class="tip">
+                <p><strong>Note:</strong> UI themes change the <em>application chrome</em>, not the graphics inside your show. To change the default colours for lower thirds, bugs, and other template layers, use <strong>Settings → Show Style</strong>.</p>
+            </div>
+        </section>
+
         <section id="settings">
             <h2>Settings</h2>
             <p>Open Settings with <span class="keyboard">Cmd ,</span>. Open the bundled help from the Help menu or with <span class="keyboard">Cmd ?</span>.</p>
@@ -227,6 +300,8 @@ curl http://localhost:17352/cues</code></pre>
                 <li><strong>Recording:</strong> directory, format, bitrate.</li>
                 <li><strong>Show Mode:</strong> Record on GO, auto-stop, virtual camera activation.</li>
                 <li><strong>Streaming:</strong> manage RTMP destinations and enable the HaishinKit backend.</li>
+                <li><strong>Show Style:</strong> choose default colours, fonts, and layout for new template layers, and save your own presets.</li>
+                <li><strong>App Theme:</strong> change the FreeStage window chrome and overall light/dark appearance.</li>
                 <li><strong>External Control:</strong> HTTP/OSC trigger servers, ports, and localhost-only security.</li>
             </ul>
         </section>

@@ -44,4 +44,20 @@ struct Layer: Identifiable, Hashable, Codable, Sendable {
         self.isLocked = isLocked
         self.cameraSettings = cameraSettings
     }
+
+    /// Resolve security-scoped bookmarks for this layer's source and filters.
+    mutating func resolveBookmarks(using bookmarks: [String: Data]) {
+        source = source.resolvingBookmarks(using: bookmarks)
+        for filterIndex in filters.indices {
+            filters[filterIndex].resolveBookmarks(using: bookmarks)
+        }
+    }
+
+    /// Transform every file URL in this layer's source and filters.
+    mutating func withFileURLs(_ map: (URL) -> URL) {
+        source = source.withFileURLs(map)
+        for filterIndex in filters.indices {
+            filters[filterIndex].withFileURLs(map)
+        }
+    }
 }

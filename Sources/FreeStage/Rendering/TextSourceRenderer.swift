@@ -134,7 +134,14 @@ final class TextSourceRenderer: SourceRenderer, @unchecked Sendable {
             x: (size.width - textSize.width) / 2,
             y: (size.height - textSize.height) / 2
         )
+
+        // NSAttributedString.draw(at:) requires an NSGraphicsContext to be
+        // current when drawing into a manually created CGContext.
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsContext
         attributed.draw(at: location)
+        NSGraphicsContext.restoreGraphicsState()
 
         return context.makeImage()
     }

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct FooterView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.openWindow) private var openWindow
     @Environment(\.recordingService) private var recordingService
     @Environment(\.virtualCameraOutputService) private var virtualCamera
@@ -23,7 +24,7 @@ struct FooterView: View {
                     withAnimation { store.inspectorVisible.toggle() }
                 } label: {
                     Image(systemName: "sidebar.left")
-                        .foregroundStyle(store.inspectorVisible ? Color.accentColor : .secondary)
+                        .foregroundStyle(store.inspectorVisible ? theme.accent : theme.secondaryText)
                 }
                 .buttonStyle(.borderless)
                 .help("Toggle Cue Settings")
@@ -32,7 +33,7 @@ struct FooterView: View {
                     withAnimation { store.mastheadVisible.toggle() }
                 } label: {
                     Image(systemName: "rectangle.topthird.inset.filled")
-                        .foregroundStyle(store.mastheadVisible ? Color.accentColor : .secondary)
+                        .foregroundStyle(store.mastheadVisible ? theme.accent : theme.secondaryText)
                 }
                 .buttonStyle(.borderless)
                 .help("Toggle Masthead")
@@ -41,7 +42,7 @@ struct FooterView: View {
                     openWindow(id: "gostream-panel")
                 } label: {
                     Image(systemName: "rectangle.split.3x1")
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(theme.accent)
                 }
                 .buttonStyle(.borderless)
                 .help("GoStream Panel")
@@ -62,7 +63,7 @@ struct FooterView: View {
 
             Text("\(store.show.cues.count) cue(s)")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.secondaryText)
 
             Spacer()
 
@@ -70,21 +71,21 @@ struct FooterView: View {
                     withAnimation { store.sidebarVisible.toggle() }
                 } label: {
                     Image(systemName: "sidebar.right")
-                        .foregroundStyle(store.sidebarVisible ? Color.accentColor : .secondary)
+                        .foregroundStyle(store.sidebarVisible ? theme.accent : theme.secondaryText)
                 }
                 .buttonStyle(.borderless)
                 .help("Toggle Layer Tools")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
     }
 
     private var modePicker: some View {
         HStack(spacing: 6) {
             Text("Mode")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.secondaryText)
                 .fixedSize(horizontal: true, vertical: false)
 
             Picker("", selection: Binding(

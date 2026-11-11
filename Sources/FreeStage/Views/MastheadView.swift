@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MastheadView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.cameraCaptureManager) private var captureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
     @Environment(\.recordingService) private var recordingService
@@ -19,6 +20,8 @@ struct MastheadView: View {
     @State private var isAddingSlideshow = false
     @State private var isAddingImage = false
     @State private var isAddingVideo = false
+    @State private var isAddingSyphon = false
+    @State private var isAddingNDI = false
 
     var body: some View {
         @Bindable var store = store
@@ -57,7 +60,7 @@ struct MastheadView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
         .sheet(isPresented: $isAddingCamera) {
             CameraPickerSheet { device in
                 let cueID = store.addCue(source: .camera(deviceID: device.uniqueID), name: device.name)
@@ -110,12 +113,26 @@ struct MastheadView: View {
                 break
             }
         }
+        .sheet(isPresented: $isAddingSyphon) {
+            SyphonPickerSheet { source in
+                let cueID = store.addCue(source: source, name: source.defaultName)
+                store.selectCue(id: cueID)
+            }
+        }
+        .sheet(isPresented: $isAddingNDI) {
+            NDIPickerSheet { source in
+                let cueID = store.addCue(source: source, name: source.defaultName)
+                store.selectCue(id: cueID)
+            }
+        }
     }
 
     private var addCueMenu: some View {
         Menu {
             Button("Camera…") { isAddingCamera = true }
             Button("Screen…") { isAddingScreen = true }
+            Button("Syphon…") { isAddingSyphon = true }
+            Button("NDI…") { isAddingNDI = true }
             Button("Color") { addCue(source: .color(.green), name: "Color") }
             Button("Text") { addCue(source: .text(TextSource()), name: "Text") }
             Button("Image…") { isAddingImage = true }
@@ -123,15 +140,15 @@ struct MastheadView: View {
             Button("Slideshow…") { isAddingSlideshow = true }
             Button("Draw") { addDrawingCue() }
             Divider()
-            Button("Border") { addCue(source: .border(BorderSource()), name: "Border") }
-            Button("Lower Third") { addCue(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
-            Button("Chapter Marker") { addCue(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
-            Button("Next Section") { addCue(source: .nextSection(NextSectionSource()), name: "Next Section") }
-            Button("Social Bug") { addCue(source: .socialBug(SocialBugSource()), name: "Social Bug") }
-            Button("Logo Bug") { addCue(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
-            Button("Countdown") { addCue(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
+            Button("Border") { addStyledCue(source: .border(BorderSource()), name: "Border") }
+            Button("Lower Third") { addStyledCue(source: .lowerThird(LowerThirdSource()), name: "Lower Third") }
+            Button("Chapter Marker") { addStyledCue(source: .chapterMarker(ChapterMarkerSource()), name: "Chapter Marker") }
+            Button("Next Section") { addStyledCue(source: .nextSection(NextSectionSource()), name: "Next Section") }
+            Button("Social Bug") { addStyledCue(source: .socialBug(SocialBugSource()), name: "Social Bug") }
+            Button("Logo Bug") { addStyledCue(source: .logoBug(LogoBugSource()), name: "Logo Bug") }
+            Button("Countdown") { addStyledCue(source: .countdownTimer(CountdownTimerSource()), name: "Countdown") }
             Button("Image Logo Bug") { addCue(source: .imageLogoBug(ImageLogoBugSource()), name: "Image Logo Bug") }
-            Button("Ticker") { addCue(source: .ticker(TickerSource()), name: "Ticker") }
+            Button("Ticker") { addStyledCue(source: .ticker(TickerSource()), name: "Ticker") }
             Button("Playlist") { addCue(source: .playlist(PlaylistSource()), name: "Playlist") }
             Divider()
             Button("Group") {
@@ -160,7 +177,7 @@ struct MastheadView: View {
                 VStack(spacing: 2) {
                     Text("GO")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(theme.text)
                     if isRecordingInShowMode {
                         Text("REC")
                             .font(.system(size: 9, weight: .bold))
@@ -244,10 +261,10 @@ struct MastheadView: View {
                 VStack(spacing: 2) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(theme.text)
                     Text("STOP")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(theme.text)
                 }
             }
         }
@@ -293,10 +310,10 @@ struct MastheadView: View {
                 if !cue.number.isEmpty {
                     Text(cue.number)
                         .font(.system(.title2, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
                 }
                 Text("•")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
                     .opacity(cue.number.isEmpty ? 0 : 1)
                 Text(cue.name)
                     .font(.title2)
@@ -304,7 +321,7 @@ struct MastheadView: View {
             } else {
                 Text("No cue standing by")
                     .font(.title2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
             }
             Spacer()
         }
@@ -338,6 +355,10 @@ struct MastheadView: View {
     private func addCue(source: Source, name: String) {
         let cueID = store.addCue(source: source, name: name)
         store.selectCue(id: cueID)
+    }
+
+    private func addStyledCue(source: Source, name: String) {
+        addCue(source: source.applying(store.show.style), name: name)
     }
 
     private func addDrawingCue() {

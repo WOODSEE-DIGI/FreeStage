@@ -46,7 +46,7 @@ struct FilterParams {
     float bgPositionX;
     float bgPositionY;
     float bgZoom;
-    float bgPad;
+    float hueShift;
 };
 
 constant uint FLAG_COLOR_CORRECTION = 1u;
@@ -62,22 +62,39 @@ static float2 chromaVector(float3 rgb) {
     return float2(cb, cr);
 }
 
-static float minChromaDistance(float3 fg, constant FilterParams &filters, int count) {
+static float minChromaDistance(float3 fg, float4 keyColors[MAX_KEY_COLORS], int count) {
     int safeCount = max(count, 1);
     float2 fgChroma = chromaVector(fg);
-    float minDist = distance(fgChroma, chromaVector(filters.keyColors[0].rgb));
+    float minDist = distance(fgChroma, chromaVector(keyColors[0].rgb));
     for (int i = 1; i < safeCount; i++) {
-        float d = distance(fgChroma, chromaVector(filters.keyColors[i].rgb));
+        float d = distance(fgChroma, chromaVector(keyColors[i].rgb));
         minDist = min(minDist, d);
     }
     return minDist;
 }
 
-static float3 dominantKeyColor(constant FilterParams &filters, int count) {
+static float3 dominantKeyColor(float4 keyColors[MAX_KEY_COLORS], int count) {
     int safeCount = max(count, 1);
     float3 sum = float3(0.0);
-    for (int i = 0; i < safeCount; i++) { sum += filters.keyColors[i].rgb; }
+    for (int i = 0; i < safeCount; i++) { sum += keyColors[i].rgb; }
     return sum / float(safeCount);
+}
+
+static float3 rotateHue(float3 rgb, float angle) {
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+    float3x3 matrix = float3x3(
+        float3(0.299 + 0.701 * cosA + 0.168 * sinA,
+               0.299 - 0.299 * cosA - 0.328 * sinA,
+               0.299 - 0.300 * cosA + 1.250 * sinA),
+        float3(0.587 - 0.587 * cosA + 0.330 * sinA,
+               0.587 + 0.413 * cosA + 0.035 * sinA,
+               0.587 - 0.588 * cosA - 1.050 * sinA),
+        float3(0.114 - 0.114 * cosA - 0.497 * sinA,
+               0.114 - 0.114 * cosA + 0.292 * sinA,
+               0.114 + 0.886 * cosA - 0.203 * sinA)
+    );
+    return saturate(matrix * rgb);
 }
 
 static float3 applyColorCorrection(float3 rgb, constant FilterParams &filters) {
@@ -135,7 +152,15 @@ static float skinToneMask(float3 rgb) {
 
 static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
     int count = max(min(int(filters.keyColorCount), MAX_KEY_COLORS), 1);
-    float chromaDist = minChromaDistance(src.rgb, filters, count);
+
+    // Apply hue shift to the stored key colors so preset green/blue can be
+    // fine-tuned without editing the base color.
+    float4 shiftedKeyColors[MAX_KEY_COLORS];
+    for (int i = 0; i < MAX_KEY_COLORS; i++) {
+        shiftedKeyColors[i] = float4(rotateHue(filters.keyColors[i].rgb, filters.hueShift), 1.0);
+    }
+
+    float chromaDist = minChromaDistance(src.rgb, shiftedKeyColors, count);
 
     float halfSmooth = max(filters.keySmoothing, 0.001) * 0.5;
     float matte = smoothstep(
@@ -175,7 +200,7 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
     float skinMask = skinToneMask(src.rgb);
     spillFactor *= 1.0 - skinMask * filters.keySkinProtection;
 
-    float3 keyColor = dominantKeyColor(filters, count);
+    float3 keyColor = dominantKeyColor(shiftedKeyColors, count);
     float3 spill = src.rgb;
     bool isGreen = keyColor.g > max(keyColor.r, keyColor.b);
     bool isBlue  = keyColor.b > max(keyColor.r, keyColor.g);

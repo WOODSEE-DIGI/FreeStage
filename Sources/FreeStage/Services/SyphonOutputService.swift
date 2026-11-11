@@ -12,10 +12,19 @@ import Syphon
 
 /// Thin wrapper around SyphonMetalServer. Lives on the render side and is
 /// called once per frame with the output texture.
+///
+/// Note: Syphon uses CFMessagePort and NSDistributedNotificationCenter, which
+/// are blocked by the App Sandbox. Initializing a server inside a sandboxed
+/// process raises an exception, so this service returns nil and disables Syphon
+/// output when sandboxed.
 final class SyphonOutputService: @unchecked Sendable {
     private let server: SyphonMetalServer?
 
     init?(device: MTLDevice, name: String = "FreeStage") {
+        guard !isAppSandboxed() else {
+            self.server = nil
+            return
+        }
         self.server = SyphonMetalServer(name: name, device: device, options: nil)
     }
 

@@ -660,7 +660,15 @@ final class TemplateSourceRenderer: SourceRenderer, @unchecked Sendable {
             .foregroundColor: NSColor(red: color.r, green: color.g, blue: color.b, alpha: color.a)
         ]
         let attributed = NSAttributedString(string: text, attributes: attributes)
+
+        // NSAttributedString.draw(at:) requires an NSGraphicsContext to be
+        // current. The CGContext created for the Metal texture does not have
+        // one by default, so text would fail to render.
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsContext
         attributed.draw(at: point)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func attributedSize(for text: String, fontSize: Double) -> CGSize {

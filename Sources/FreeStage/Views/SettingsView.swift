@@ -9,11 +9,14 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.cueTriggerServer) private var cueTriggerServer
     @Environment(\.oscCueServer) private var oscCueServer
     @State private var showingDirectoryPicker = false
     @State private var showingDocumentation = false
     @State private var showingStreamDestinations = false
+    @State private var showingShowStyleEditor = false
 
     private enum ResolutionPreset: String, CaseIterable, Identifiable {
         case hd720 = "1280x720"
@@ -144,6 +147,23 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Show Style") {
+                Button("Edit Show Style & Presets…") {
+                    showingShowStyleEditor = true
+                }
+                .help("Choose default colours, fonts, and layout for new lower thirds, bugs, and other template layers.")
+            }
+
+            Section("App Theme") {
+                Picker("Theme", selection: theme.selectedThemeIDBinding) {
+                    ForEach(theme.themes) { theme in
+                        Text(theme.name).tag(theme.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .help("Change the colours of the FreeStage window chrome. Each theme also sets the light/dark appearance.")
+            }
+
             Section("Help") {
                 Button("Open FreeStage Help") {
                     showingDocumentation = true
@@ -200,7 +220,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 420, idealWidth: 520)
+        .frame(minWidth: 420, idealWidth: 520, minHeight: 640, idealHeight: 800)
         .padding()
         .sheet(isPresented: $showingDirectoryPicker) {
             DirectoryPickerSheet(selectedURL: $settings.recordingDirectory)
@@ -212,6 +232,10 @@ struct SettingsView: View {
         .sheet(isPresented: $showingStreamDestinations) {
             StreamDestinationsSettingsView()
                 .frame(minWidth: 560, minHeight: 480)
+        }
+        .sheet(isPresented: $showingShowStyleEditor) {
+            ShowStyleEditorView()
+                .frame(minWidth: 460, minHeight: 600)
         }
     }
 
@@ -381,4 +405,6 @@ private struct DirectoryPickerSheet: View {
 #Preview {
     SettingsView()
         .environment(AppSettings())
+        .environment(ShowStore())
+        .environment(ThemeStore())
 }

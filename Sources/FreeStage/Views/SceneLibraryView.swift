@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SceneLibraryView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @State private var newSceneName = ""
 
     var body: some View {
@@ -18,20 +19,23 @@ struct SceneLibraryView: View {
             header
                 .padding(.horizontal)
                 .padding(.vertical, 8)
+                .foregroundStyle(theme.text)
 
             Divider()
 
             List(selection: $store.selectedSceneID) {
                 ForEach(store.show.scenes) { scene in
                     sceneRow(scene)
+                        .listRowBackground(theme.panelBackground)
                 }
                 .onDelete { indexSet in
                     deleteScenes(at: indexSet)
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
-        .background(.ultraThinMaterial)
+        .background(theme.panelBackground)
     }
 
     private var header: some View {
@@ -63,7 +67,7 @@ struct SceneLibraryView: View {
                     .lineLimit(1)
                 Text("\(cueCount) cue\(cueCount == 1 ? "" : "s")")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
             }
 
             Spacer()
@@ -122,4 +126,5 @@ struct SceneLibraryView: View {
 #Preview {
     SceneLibraryView()
         .environment(ShowStore())
+        .environment(ThemeStore())
 }

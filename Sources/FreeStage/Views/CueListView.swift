@@ -10,6 +10,7 @@ import SwiftUI
 
 struct CueListView: View {
     @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
     @Environment(\.appSettings) private var appSettings
 
     var body: some View {
@@ -31,6 +32,7 @@ struct CueListView: View {
             TableColumn("Number") { cue in
                 Text(cue.number)
                     .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(theme.text)
                     .cellBackground(cue.color?.swiftUIColor)
             }
             .width(min: 40, ideal: 60)
@@ -38,13 +40,14 @@ struct CueListView: View {
             TableColumn("Name") { cue in
                 Text(cue.name)
                     .lineLimit(1)
+                    .foregroundStyle(theme.text)
                     .cellBackground(cue.color?.swiftUIColor)
             }
             .width(min: 80, ideal: 140)
 
             TableColumn("Scene") { cue in
                 Text(sceneName(for: cue))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.secondaryText)
                     .lineLimit(1)
                     .cellBackground(cue.color?.swiftUIColor)
             }
@@ -53,6 +56,7 @@ struct CueListView: View {
             TableColumn("Pre Wait") { cue in
                 Text(formatTime(cue.preWait))
                     .monospacedDigit()
+                    .foregroundStyle(theme.text)
                     .cellBackground(cue.color?.swiftUIColor)
             }
             .width(60)
@@ -60,6 +64,7 @@ struct CueListView: View {
             TableColumn("Duration") { cue in
                 Text(formatTime(cue.duration))
                     .monospacedDigit()
+                    .foregroundStyle(theme.text)
                     .cellBackground(cue.color?.swiftUIColor)
             }
             .width(60)
@@ -67,6 +72,7 @@ struct CueListView: View {
             TableColumn("Post Wait") { cue in
                 Text(formatTime(cue.postWait))
                     .monospacedDigit()
+                    .foregroundStyle(theme.text)
                     .cellBackground(cue.color?.swiftUIColor)
             }
             .width(60)
@@ -74,7 +80,7 @@ struct CueListView: View {
             TableColumn("") { cue in
                 if cue.continueMode != .none {
                     Image(systemName: cue.continueMode.systemImage)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.secondaryText)
                 }
             }
             .width(40)
@@ -117,6 +123,7 @@ struct CueListView: View {
                     }
             }
         }
+        .background(theme.panelBackground)
 
     }
 

@@ -78,8 +78,13 @@ targets:
         CLANG_CXX_LIBRARY: libc++
         USER_HEADER_SEARCH_PATHS:
           - Vendor/MediaPipeFaceMesh/src
+          - Vendor/NDI
+        LIBRARY_SEARCH_PATHS:
+          - /usr/local/lib
         OTHER_LDFLAGS:
           - -lc++
+          - -lndi
+          - -Wl,-rpath,/usr/local/lib
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "-"
@@ -112,6 +117,14 @@ targets:
             CFBundleTypeRole: Editor
             LSItemContentTypes:
               - com.woodseedigi.freestage.show
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.woodseedigi.freestage.show
+            UTTypeDescription: FreeStage Show
+            UTTypeConformsTo:
+              - com.apple.package
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - fst
     preBuildScripts:
       - name: SwiftLint placeholder
         script: |
