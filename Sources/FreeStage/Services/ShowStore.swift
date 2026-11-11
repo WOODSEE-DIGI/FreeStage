@@ -361,6 +361,18 @@ final class ShowStore: NSObject {
         _ = mutateLayer(id: id) { $0.isVisible = isVisible }
     }
 
+    /// Reorder layers within the active scene.
+    func moveLayerInActiveScene(from source: IndexSet, to destination: Int) {
+        guard let scene = activeScene,
+              let sceneIndex = show.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        show.scenes[sceneIndex].layers.move(fromOffsets: source, toOffset: destination)
+    }
+
+    /// Reorder the show-level global layers.
+    func moveGlobalLayer(from source: IndexSet, to destination: Int) {
+        show.globalLayers.move(fromOffsets: source, toOffset: destination)
+    }
+
     // MARK: - Filters
 
     func addFilterToSelectedLayer(_ filter: Filter) {

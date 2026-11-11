@@ -171,6 +171,7 @@ struct LayerEditorView: View {
                             ForEach(store.show.globalLayers) { layer in
                                 layerRow(layer: layer, isGlobal: true)
                             }
+                            .onMove(perform: store.moveGlobalLayer)
                         }
                     }
 
@@ -179,6 +180,7 @@ struct LayerEditorView: View {
                             ForEach(scene.layers) { layer in
                                 layerRow(layer: layer, isGlobal: false)
                             }
+                            .onMove(perform: store.moveLayerInActiveScene)
                         }
                     }
                 }
