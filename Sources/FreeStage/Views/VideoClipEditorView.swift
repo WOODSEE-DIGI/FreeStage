@@ -25,6 +25,9 @@ struct VideoClipEditorView: View {
     @State private var statusMessage: String?
     @State private var timer: Timer?
 
+    /// Bitrate above which a proxy is generated automatically (bits/sec).
+    private static let autoProxyBitrateThreshold: Double = 8_000_000
+
     var body: some View {
         VStack(spacing: 16) {
             header
@@ -112,15 +115,9 @@ struct VideoClipEditorView: View {
 
     private var timelineControls: some View {
         VStack(spacing: 8) {
-            Slider(value: $currentTime, in: 0...max(duration, 0.01)) { editing in
-                if editing {
-                    pause()
-                    seek(to: currentTime)
-                } else {
-                    seek(to: currentTime)
-                }
-            }
-            .disabled(duration <= 0)
+            timelineView
+                .frame(height: 32)
+                .disabled(duration <= 0)
 
             HStack(spacing: 16) {
                 Button {
@@ -149,6 +146,77 @@ struct VideoClipEditorView: View {
                     .foregroundStyle(theme.text)
             }
         }
+    }
+
+    // MARK: - Custom timeline with In/Out markers
+
+    private var timelineView: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let inX = xPosition(for: clip.inPoint, width: width)
+            let outX = xPosition(for: clip.outPoint ?? duration, width: width)
+            let playheadX = xPosition(for: currentTime, width: width)
+
+            ZStack(alignment: .leading) {
+                // Full track
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.secondaryText.opacity(0.15))
+
+                // Trimmed range highlight
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.accent.opacity(0.35))
+                    .frame(width: max(0, outX - inX))
+                    .offset(x: inX)
+
+                // In marker
+                timelineMarker(at: inX, color: .green, label: "I")
+
+                // Out marker
+                timelineMarker(at: outX, color: .red, label: "O")
+
+                // Playhead
+                Rectangle()
+                    .fill(theme.text)
+                    .frame(width: 2)
+                    .offset(x: playheadX)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        pause()
+                        let ratio = max(0, min(1, value.location.x / width))
+                        let newTime = ratio * duration
+                        currentTime = newTime
+                        seek(to: newTime)
+                    }
+            )
+        }
+    }
+
+    private func xPosition(for time: Double, width: CGFloat) -> CGFloat {
+        guard duration > 0 else { return 0 }
+        let ratio = max(0, min(1, time / duration))
+        return ratio * width
+    }
+
+    private func timelineMarker(at x: CGFloat, color: Color, label: String) -> some View {
+        ZStack(alignment: .top) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 2)
+                .offset(x: x)
+
+            Text(label)
+                .font(.caption2.bold())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(color)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .offset(x: x - 8, y: -2)
+        }
+        .frame(maxHeight: .infinity)
     }
 
     // MARK: - In/Out and export buttons
@@ -212,15 +280,35 @@ struct VideoClipEditorView: View {
 
         Task {
             let asset = AVURLAsset(url: clip.sourceURL)
-            let loadedDuration = try? await asset.load(.duration).seconds
-            let finalDuration = loadedDuration ?? 0
+            let loadedDuration = try? await asset.load(.duration)
+            let bitrate = Double(
+                (try? await asset.loadTracks(withMediaType: .video).first?.load(.estimatedDataRate)) ?? 0
+            )
+            let finalDuration = loadedDuration?.seconds ?? 0
             await MainActor.run {
                 duration = finalDuration
                 if clip.sourceDuration == nil {
                     clip.sourceDuration = finalDuration
                 }
                 startTimer()
+
+                // Auto-generate a proxy for high-bitrate sources so scrubbing
+                // stays responsive without forcing the user to click the button.
+                if clip.proxyURL == nil,
+                   bitrate > Self.autoProxyBitrateThreshold,
+                   !isGeneratingProxy {
+                    statusMessage = "Source bitrate is high (\(formatBitrate(bitrate))); generating proxy for scrubbing…"
+                    generateProxy()
+                }
             }
+        }
+    }
+
+    private func formatBitrate(_ bitsPerSecond: Double) -> String {
+        if bitsPerSecond >= 1_000_000 {
+            return String(format: "%.1f Mbps", bitsPerSecond / 1_000_000)
+        } else {
+            return String(format: "%.0f kbps", bitsPerSecond / 1_000)
         }
     }
 
