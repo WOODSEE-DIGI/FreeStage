@@ -18,34 +18,22 @@ struct PresenterWorkspaceView: View {
             theme.background
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                HStack {
-                    Text(store.show.name)
-                        .font(.title2.bold())
-                        .foregroundStyle(theme.text)
-                    Spacer()
-                    Text("Presenter Mode")
-                        .font(.caption.bold())
-                        .foregroundStyle(theme.secondaryText)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(theme.panelBackground)
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal)
+            VStack(spacing: 12) {
+                headerBar
+                    .padding(.horizontal)
 
                 HStack(spacing: 16) {
                     segmentRundown
-                        .frame(minWidth: 240, idealWidth: 280)
+                        .frame(minWidth: 260, idealWidth: 300)
 
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         liveMonitor
                         previewMonitor
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     placeholderPanel
-                        .frame(minWidth: 240, idealWidth: 280)
+                        .frame(minWidth: 260, idealWidth: 300)
                 }
                 .padding(.horizontal)
 
@@ -53,40 +41,60 @@ struct PresenterWorkspaceView: View {
                     .padding(.horizontal)
                     .padding(.bottom)
             }
-            .padding(.vertical)
+            .padding(.vertical, 8)
         }
     }
 
-    // MARK: - Subviews (placeholders)
+    // MARK: - Header
+
+    private var headerBar: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.show.name)
+                    .font(.title2.bold())
+                    .foregroundStyle(theme.text)
+                Text("Presenter Mode")
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Rundown
 
     private var segmentRundown: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Rundown")
-                .font(.headline)
-                .foregroundStyle(theme.text)
-                .padding()
+            HStack {
+                Text("Rundown")
+                    .font(.headline)
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button {
+                    store.addPresenterSegment(type: .cameraGraphic, after: store.activeSegmentID)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Add segment after the selected one")
+            }
+            .padding([.horizontal, .top])
+            .padding(.bottom, 8)
 
             if let segments = store.presenterRundown?.segments, !segments.isEmpty {
                 List(selection: .constant(store.activeSegmentID)) {
                     ForEach(segments) { segment in
-                        HStack {
-                            Image(systemName: segment.type.iconName)
-                                .foregroundStyle(theme.accent)
-                            Text(segment.name)
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            if segment.id == store.liveSegmentID {
-                                Image(systemName: "record.circle.fill")
-                                    .foregroundStyle(.red)
-                            } else if segment.id == store.activeSegmentID {
-                                Image(systemName: "play.circle.fill")
-                                    .foregroundStyle(theme.selected)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            store.selectSegment(id: segment.id)
+                        segmentRow(segment)
+                            .listRowBackground(rowBackground(for: segment))
+                            .tag(segment.id)
+                    }
+                    .onMove { source, destination in
+                        store.movePresenterSegment(from: source, to: destination)
+                    }
+                    .onDelete { indexSet in
+                        indexSet.forEach { index in
+                            let id = segments[index].id
+                            store.deletePresenterSegment(id: id)
                         }
                     }
                 }
@@ -100,83 +108,112 @@ struct PresenterWorkspaceView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private var liveMonitor: some View {
-        VStack(spacing: 8) {
-            HStack {
+    private func segmentRow(_ segment: PresenterSegment) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: segment.type.iconName)
+                .foregroundStyle(theme.accent)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(segment.name)
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(segment.type.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(theme.secondaryText)
+                    if segment.type == .cameraGraphic {
+                        Text("· \(segment.cameraAngle.displayName)")
+                            .font(.caption2)
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                    if segment.autoFollow {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                }
+            }
+
+            Spacer()
+
+            if segment.id == store.liveSegmentID {
                 Image(systemName: "record.circle.fill")
                     .foregroundStyle(.red)
-                Text("Live")
-                    .font(.caption.bold())
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Text(store.liveSegment?.name ?? "—")
-                    .foregroundStyle(theme.secondaryText)
+            } else if segment.id == store.activeSegmentID {
+                Image(systemName: "play.circle.fill")
+                    .foregroundStyle(theme.selected)
             }
-            .padding(.horizontal, 8)
-
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black)
-                .overlay(
-                    Text("Live Output")
-                        .foregroundStyle(theme.secondaryText)
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(8)
-        .background(theme.panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            store.selectSegment(id: segment.id)
+        }
+        .contextMenu {
+            Button("Duplicate") {
+                store.duplicatePresenterSegment(id: segment.id)
+            }
+            Button("Delete", role: .destructive) {
+                store.deletePresenterSegment(id: segment.id)
+            }
+        }
+    }
+
+    private func rowBackground(for segment: PresenterSegment) -> some View {
+        let isSelected = segment.id == store.activeSegmentID
+        let isLive = segment.id == store.liveSegmentID
+        return (isLive ? theme.selected.opacity(0.25) : (isSelected ? theme.selected.opacity(0.12) : Color.clear))
+    }
+
+    // MARK: - Monitors
+
+    private var liveMonitor: some View {
+        StageMonitorView(
+            scene: store.presenterLiveScene,
+            title: "Live",
+            isLive: true,
+            isEditable: false
+        )
     }
 
     private var previewMonitor: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Preview")
-                    .font(.caption.bold())
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Text(store.activeSegment?.name ?? "—")
-                    .foregroundStyle(theme.secondaryText)
-            }
-            .padding(.horizontal, 8)
-
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black)
-                .overlay(
-                    Text("Preview Output")
-                        .foregroundStyle(theme.secondaryText)
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(8)
-        .background(theme.panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        StageMonitorView(
+            scene: store.presenterActiveScene,
+            title: "Preview",
+            isLive: false,
+            isEditable: false
+        )
     }
+
+    // MARK: - Placeholders
 
     private var placeholderPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Placeholders")
-                .font(.headline)
-                .foregroundStyle(theme.text)
-                .padding()
+            HStack {
+                Text("Placeholders")
+                    .font(.headline)
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button {
+                    store.addPresenterPlaceholder()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Add a new placeholder")
+            }
+            .padding([.horizontal, .top])
+            .padding(.bottom, 8)
 
             if let placeholders = store.presenterRundown?.placeholders, !placeholders.isEmpty {
                 List {
                     ForEach(placeholders) { placeholder in
-                        HStack {
-                            Text(placeholder.name)
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            if placeholder.source != nil {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            } else {
-                                Image(systemName: "exclamationmark.circle")
-                                    .foregroundStyle(.yellow)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            store.selectedPlaceholderID = placeholder.id
+                        placeholderRow(placeholder)
+                    }
+                    .onDelete { indexSet in
+                        indexSet.forEach { index in
+                            store.deletePresenterPlaceholder(id: placeholders[index].id)
                         }
                     }
                 }
@@ -186,14 +223,59 @@ struct PresenterWorkspaceView: View {
                     .foregroundStyle(theme.secondaryText)
             }
 
-            Button("Add Placeholder") {
-                store.addPresenterPlaceholder()
+            if let placeholder = store.placeholder(id: store.selectedPlaceholderID) {
+                placeholderEditor(placeholder)
+                    .padding()
+                    .background(theme.background.opacity(0.5))
             }
-            .padding()
         }
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
+
+    private func placeholderRow(_ placeholder: PresenterPlaceholder) -> some View {
+        HStack {
+            Text(placeholder.name)
+                .foregroundStyle(theme.text)
+            Spacer()
+            if placeholder.source != nil {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Image(systemName: "exclamationmark.circle")
+                    .foregroundStyle(.yellow)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            store.selectedPlaceholderID = placeholder.id
+        }
+        .background(store.selectedPlaceholderID == placeholder.id ? theme.selected.opacity(0.12) : Color.clear)
+    }
+
+    private func placeholderEditor(_ placeholder: PresenterPlaceholder) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit \(placeholder.name)")
+                .font(.headline)
+                .foregroundStyle(theme.text)
+
+            Text("Placeholder source assignment UI will go here.")
+                .font(.caption)
+                .foregroundStyle(theme.secondaryText)
+
+            Button("Assign Test Color") {
+                store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = .color(CGColorComponents(r: 0.9, g: 0.2, b: 0.2, a: 1)) }
+            }
+
+            if placeholder.source != nil {
+                Button("Clear Source", role: .destructive) {
+                    store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = nil }
+                }
+            }
+        }
+    }
+
+    // MARK: - Transport
 
     private var transportBar: some View {
         HStack(spacing: 16) {
