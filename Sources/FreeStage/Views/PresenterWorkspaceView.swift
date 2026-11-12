@@ -81,7 +81,7 @@ struct PresenterWorkspaceView: View {
                     let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
 
                     HStack(spacing: 0) {
-                        leftPanel
+                        leftPanel(totalWidth: leftWidth)
                             .frame(width: leftWidth)
 
                         DragDivider { delta in
@@ -247,13 +247,15 @@ struct PresenterWorkspaceView: View {
     /// Left column: full rundown list when collapsed, icon strip + expanded
     /// editor when expanded. Width is controlled by the parent so it can be
     /// resized with the draggable divider.
-    private var leftPanel: some View {
-        HStack(spacing: 0) {
+    private func leftPanel(totalWidth: CGFloat) -> some View {
+        let editorWidth = max(0, totalWidth - iconStripWidth - 1)
+        return HStack(spacing: 0) {
             if isSegmentEditorExpanded, let segment = store.activeSegment {
                 iconRundown
+                    .frame(width: iconStripWidth)
                 Divider()
                 expandedSegmentEditor(segment)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: editorWidth, maxWidth: editorWidth, maxHeight: .infinity)
             } else {
                 expandedRundownList
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -406,6 +408,8 @@ struct PresenterWorkspaceView: View {
     }
 
     /// Full-height editor shown beside the icon rundown when expanded.
+    /// The parent HStack pins this view to a fixed width so the ScrollView
+    /// cannot create a layout feedback loop by proposing its own width.
     private func expandedSegmentEditor(_ segment: PresenterSegment) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -422,6 +426,7 @@ struct PresenterWorkspaceView: View {
                 .buttonStyle(.borderless)
                 .help("Collapse segment editor")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.horizontal, .top])
             .padding(.bottom, 8)
 
@@ -432,6 +437,7 @@ struct PresenterWorkspaceView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
