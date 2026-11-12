@@ -532,6 +532,7 @@ struct PresenterWorkspaceView: View {
                 HStack {
                     Text("Spill Suppression")
                     Slider(value: binding.spillSuppression, in: 0...2)
+                        .help("Subtracts the selected key hue from foreground edges and adds back a complementary or skin-warm hue.")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

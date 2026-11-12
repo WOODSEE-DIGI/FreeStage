@@ -224,44 +224,44 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
     float nonSkinSpill = spillFactor * (1.0 - skinProtect);
     float skinSpill    = spillFactor * skinProtect;
 
+    // Hue-targeted vector despill: subtract the actual selected key color
+    // (after hue shift) from the foreground, then add back a target hue to
+    // keep the image from going flat or picking up a magenta cast. This is
+    // far more direct than the old green/blue channel heuristic.
     float3 keyColor = dominantKeyColor(shiftedKeyColors, count);
+    float3 keyDir = keyColor.rgb;
+    float keyLen = length(keyDir);
+    keyDir = (keyLen > 0.001) ? keyDir / keyLen : float3(0.0, 1.0, 0.0);
+
+    // How much of the pixel is aligned with the key hue beyond the average
+    // of the other channels. For a pure green key this becomes the familiar
+    // greenExcess = max(0, g - (r+b)/2).
+    float3 inverseMask = 1.0 - keyDir;
+    float otherSum = dot(src.rgb, inverseMask);
+    float otherCount = max(dot(inverseMask, float3(1.0)), 0.001);
+    float avgOther = otherSum / otherCount;
+    float keyProjection = dot(src.rgb, keyDir);
+    float excess = max(0.0, keyProjection - avgOther);
+
+    // Split correction between skin and non-skin. Skin gets a warm target;
+    // non-skin gets the complementary hue (e.g. green -> magenta).
+    float3 complement = normalize(max(float3(1.0) - keyDir, 0.0));
+    float3 skinTarget = normalize(float3(0.95, 0.45, 0.25));
+    float3 target = normalize(mix(complement, skinTarget, skinProtect));
+
+    float3 lumaCoeffs = float3(0.299, 0.587, 0.114);
+    float keyLuma = dot(keyDir, lumaCoeffs);
+    float targetLuma = max(dot(target, lumaCoeffs), 0.001);
+
     float3 spill = src.rgb;
-    bool isGreen = keyColor.g > max(keyColor.r, keyColor.b);
-    bool isBlue  = keyColor.b > max(keyColor.r, keyColor.g);
+    float removed = excess * nonSkinSpill + excess * skinSpill;
+    spill -= keyDir * removed;
 
-    if (isGreen) {
-        float greenExcess = max(0.0, spill.g - (spill.r + spill.b) * 0.5);
-
-        // Non-skin: balanced green removal with red/blue compensation.
-        spill.g -= greenExcess * nonSkinSpill * 1.4;
-        spill.r += greenExcess * nonSkinSpill * 0.6;
-        spill.b += greenExcess * nonSkinSpill * 0.55;
-
-        // Skin-safe: stronger green suppression but bias the compensation
-        // toward red and away from blue, so skin stays warm instead of
-        // picking up a magenta cast.
-        spill.g -= greenExcess * skinSpill * 1.4;
-        spill.r += greenExcess * skinSpill * 0.85;
-        spill.b += greenExcess * skinSpill * 0.20;
-    } else if (isBlue) {
-        float blueExcess = max(0.0, spill.b - (spill.r + spill.g) * 0.5);
-
-        // Non-skin: balanced blue removal.
-        spill.b -= blueExcess * nonSkinSpill * 1.4;
-        spill.r += blueExcess * nonSkinSpill * 0.65;
-        spill.g += blueExcess * nonSkinSpill * 0.5;
-
-        // Skin-safe: remove blue spill and add warmth (red + green).
-        spill.b -= blueExcess * skinSpill * 1.4;
-        spill.r += blueExcess * skinSpill * 0.70;
-        spill.g += blueExcess * skinSpill * 0.45;
-    } else {
-        float3 toKey = keyColor - spill;
-        spill -= toKey * nonSkinSpill * 0.75;
-        // On a custom key there is no explicit skin path; just reduce the
-        // overall strength on skin so the hue stays closer to original.
-        spill -= toKey * skinSpill * 0.35;
-    }
+    // Add back enough of the target hue to roughly preserve luminance,
+    // but cap the replacement so we don't oversaturate.
+    float addAmount = removed * keyLuma / targetLuma;
+    addAmount = min(addAmount, removed * 1.5);
+    spill += target * addAmount;
 
     return float4(clamp(spill, 0.0, 1.0), src.a * matte);
 }

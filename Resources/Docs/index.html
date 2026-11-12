@@ -288,8 +288,8 @@
                 <li><strong>Key Colors:</strong> add up to four sampled colors to handle highlights and shadows across an uneven screen.</li>
                 <li><strong>A / B Bypass:</strong> toggle the bypass switch to temporarily disable the key and compare against the original source.</li>
                 <li><strong>Edge Feather:</strong> softens the transition between kept and keyed-out pixels.</li>
-                <li><strong>Edge Despill:</strong> boosts spill suppression exactly where the foreground meets the keyed background.</li>
-                <li><strong>Spill Suppression / Range:</strong> removes green/blue reflection from foreground edges and skin tones.</li>
+                <li><strong>Edge Despill:</strong> boosts hue-targeted spill suppression exactly where the foreground meets the keyed background.</li>
+                <li><strong>Spill Suppression / Range:</strong> removes the selected key color from foreground edges and skin tones. The spill is subtracted along the actual key hue vector, then a complementary or skin-warm hue is added back.</li>
                 <li><strong>Skin Tone Protection:</strong> detects warm skin tones and applies a skin-safe despill that removes green/blue spill from fair skin while keeping it warm, rather than just disabling the correction.</li>
                 <li><strong>Background:</strong> choose an image or video to composite behind the keyed layer, or leave it transparent.</li>
             </ul>
