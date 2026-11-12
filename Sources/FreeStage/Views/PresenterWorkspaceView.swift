@@ -30,6 +30,14 @@ struct PresenterWorkspaceView: View {
         var ids = Set<String>()
         ids.formUnion(cameraIDs(for: store.presenterLiveScene))
         ids.formUnion(cameraIDs(for: store.presenterActiveScene))
+        // Keep configured cameras awake even when the current segment is a
+        // title/break, so selecting a camera in Show Setup immediately turns it on.
+        if let primaryID = store.presenterCameraID(for: .primary) {
+            ids.insert(primaryID)
+        }
+        if let secondaryID = store.presenterCameraID(for: .secondary) {
+            ids.insert(secondaryID)
+        }
         return ids
     }
 
@@ -85,6 +93,8 @@ struct PresenterWorkspaceView: View {
     // MARK: - Capture management
 
     private func updateCameraCapture() {
+        let ids = Array(requiredCameraIDs)
+        print("[PresenterWorkspaceView] required camera IDs: \(ids)")
         cameraCaptureManager?.syncCaptures(requiredIDs: requiredCameraIDs)
     }
 
