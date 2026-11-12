@@ -544,6 +544,7 @@ struct PresenterWorkspaceView: View {
                 HStack {
                     Text("Skin Tone Protection")
                     Slider(value: binding.skinToneProtection, in: 0...1)
+                        .help("Detects skin tones and removes spill with a skin-safe correction instead of the aggressive default despill.")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

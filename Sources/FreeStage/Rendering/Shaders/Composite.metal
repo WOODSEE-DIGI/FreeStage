@@ -138,17 +138,35 @@ static float3 applyColorCorrection(float3 rgb, constant FilterParams &filters) {
     return clamp(c, 0.0, 1.0);
 }
 
-static float skinToneMask(float3 rgb) {
-    // Approximate skin-tone detection: warm hues with red > green > blue
-    // and moderate luminance. Returns 1.0 for skin, 0.0 for non-skin.
-    float r = rgb.r;
-    float g = rgb.g;
-    float b = rgb.b;
-    bool warm = r > g && g > b && r > 0.25;
-    bool notTooRed = r < 0.95 && g < 0.75;
-    float luma = dot(rgb, float3(0.299, 0.587, 0.114));
-    bool brightEnough = luma > 0.08 && luma < 0.95;
-    return (warm && notTooRed && brightEnough) ? 1.0 : 0.0;
+static float skinToneMask(float3 rgb, float protection) {
+    // Continuous skin-tone mask based on YCbCr chroma and luma.
+    // Fair skin clusters around Cb ~0.47, Cr ~0.56 with Cr > Cb. Green spill
+    // pushes Cb up and Cr down, so the mask widens as protection increases
+    // so skin edges still register even when they carry a strong green cast.
+    float y = dot(rgb, float3(0.299, 0.587, 0.114));
+    float cb = dot(rgb, rgbToCb) + 0.5;
+    float cr = dot(rgb, rgbToCr) + 0.5;
+
+    // Warmth: skin has Cr > Cb. At full protection allow slightly negative
+    // warmth so green-spilled fair skin is still caught.
+    float warm = cr - cb;
+    float warmMin = mix(0.02, -0.04, protection);
+    float warmMax = mix(0.22, 0.28, protection);
+    float warmScore = smoothstep(warmMin, warmMin + 0.04, warm)
+                    * (1.0 - smoothstep(warmMax - 0.04, warmMax, warm));
+
+    // Distance from a typical fair-skin centre in CbCr space.
+    float2 center = float2(0.47, 0.56);
+    float dist = distance(float2(cb, cr), center);
+    float distRadius = mix(0.10, 0.18, protection);
+    float distScore = 1.0 - smoothstep(distRadius * 0.4, distRadius, dist);
+
+    // Luma: skin is neither very dark nor blown out.
+    float lumaMin = mix(0.12, 0.08, protection);
+    float lumaScore = smoothstep(lumaMin, lumaMin + 0.10, y)
+                    * (1.0 - smoothstep(0.82, 0.95, y));
+
+    return saturate(warmScore * distScore * lumaScore);
 }
 
 static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
@@ -197,9 +215,14 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
     float edgeBoost = 1.0 + edgeProximity * filters.keyEdgeDespill * 2.0;
     spillFactor *= matte * filters.keySpillAmount * edgeBoost;
 
-    // Reduce despill on skin tones when skin-tone protection is enabled.
-    float skinMask = skinToneMask(src.rgb);
-    spillFactor *= 1.0 - skinMask * filters.keySkinProtection;
+    // Split spill suppression between skin and non-skin areas. Skin-tone
+    // protection no longer just disables despill on skin; it switches to a
+    // skin-safe correction that removes the green/blue cast while preserving
+    // warm skin hues, which is essential for fair skin on bald heads/faces.
+    float skinMask = skinToneMask(src.rgb, filters.keySkinProtection);
+    float skinProtect = saturate(skinMask * filters.keySkinProtection);
+    float nonSkinSpill = spillFactor * (1.0 - skinProtect);
+    float skinSpill    = spillFactor * skinProtect;
 
     float3 keyColor = dominantKeyColor(shiftedKeyColors, count);
     float3 spill = src.rgb;
@@ -208,18 +231,36 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
 
     if (isGreen) {
         float greenExcess = max(0.0, spill.g - (spill.r + spill.b) * 0.5);
-        // Stronger green suppression; add more red/blue to cancel green cast.
-        spill.g -= greenExcess * spillFactor * 1.4;
-        spill.r += greenExcess * spillFactor * 0.6;
-        spill.b += greenExcess * spillFactor * 0.55;
+
+        // Non-skin: balanced green removal with red/blue compensation.
+        spill.g -= greenExcess * nonSkinSpill * 1.4;
+        spill.r += greenExcess * nonSkinSpill * 0.6;
+        spill.b += greenExcess * nonSkinSpill * 0.55;
+
+        // Skin-safe: stronger green suppression but bias the compensation
+        // toward red and away from blue, so skin stays warm instead of
+        // picking up a magenta cast.
+        spill.g -= greenExcess * skinSpill * 1.4;
+        spill.r += greenExcess * skinSpill * 0.85;
+        spill.b += greenExcess * skinSpill * 0.20;
     } else if (isBlue) {
         float blueExcess = max(0.0, spill.b - (spill.r + spill.g) * 0.5);
-        spill.b -= blueExcess * spillFactor * 1.4;
-        spill.r += blueExcess * spillFactor * 0.65;
-        spill.g += blueExcess * spillFactor * 0.5;
+
+        // Non-skin: balanced blue removal.
+        spill.b -= blueExcess * nonSkinSpill * 1.4;
+        spill.r += blueExcess * nonSkinSpill * 0.65;
+        spill.g += blueExcess * nonSkinSpill * 0.5;
+
+        // Skin-safe: remove blue spill and add warmth (red + green).
+        spill.b -= blueExcess * skinSpill * 1.4;
+        spill.r += blueExcess * skinSpill * 0.70;
+        spill.g += blueExcess * skinSpill * 0.45;
     } else {
         float3 toKey = keyColor - spill;
-        spill -= toKey * spillFactor * 0.75;
+        spill -= toKey * nonSkinSpill * 0.75;
+        // On a custom key there is no explicit skin path; just reduce the
+        // overall strength on skin so the hue stays closer to original.
+        spill -= toKey * skinSpill * 0.35;
     }
 
     return float4(clamp(spill, 0.0, 1.0), src.a * matte);
