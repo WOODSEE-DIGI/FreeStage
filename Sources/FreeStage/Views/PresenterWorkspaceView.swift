@@ -30,6 +30,12 @@ struct PresenterWorkspaceView: View {
     @State private var leftColumnWidth: CGFloat = 380
     @State private var rightColumnWidth: CGFloat = 240
     private let iconStripWidth: CGFloat = 44
+    private let leftExpandedMin: CGFloat = 340
+    private let leftExpandedMax: CGFloat = 600
+    private let rightMin: CGFloat = 200
+    private let rightMax: CGFloat = 450
+    private let centreMin: CGFloat = 240
+    private let dividerThickness: CGFloat = 14
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -70,19 +76,20 @@ struct PresenterWorkspaceView: View {
 
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
-                    let leftWidth = isSegmentEditorExpanded ? max(340, leftColumnWidth) : 220
-                    let rightWidth = max(200, rightColumnWidth)
-                    let centerWidth = max(240, totalWidth - leftWidth - rightWidth - 28)
+                    let leftWidth = isSegmentEditorExpanded ? max(leftExpandedMin, leftColumnWidth) : 220
+                    let rightWidth = max(rightMin, rightColumnWidth)
+                    let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
 
                     HStack(spacing: 0) {
                         leftPanel
                             .frame(width: leftWidth)
 
                         DragDivider { delta in
+                            guard isSegmentEditorExpanded else { return }
                             let newLeft = leftColumnWidth + delta
-                            leftColumnWidth = min(max(newLeft, 360), 600)
+                            leftColumnWidth = min(max(newLeft, leftExpandedMin), leftExpandedMax)
                         }
-                        .frame(width: 14)
+                        .frame(width: dividerThickness)
 
                         VStack(spacing: 12) {
                             liveMonitor
@@ -92,13 +99,14 @@ struct PresenterWorkspaceView: View {
 
                         DragDivider { delta in
                             let newRight = rightColumnWidth - delta
-                            rightColumnWidth = min(max(newRight, 220), 450)
+                            rightColumnWidth = min(max(newRight, rightMin), rightMax)
                         }
-                        .frame(width: 14)
+                        .frame(width: dividerThickness)
 
                         placeholderPanel
                             .frame(width: rightWidth)
                     }
+                    .animation(.none, value: isSegmentEditorExpanded)
                 }
                 .padding(.horizontal)
 
@@ -350,7 +358,7 @@ struct PresenterWorkspaceView: View {
             }
             .padding(.vertical, 6)
         }
-        .frame(width: 44)
+        .frame(width: iconStripWidth)
     }
 
     // MARK: - Segment editor
@@ -419,9 +427,11 @@ struct PresenterWorkspaceView: View {
 
             Divider()
 
-            segmentEditorBody(segment)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding()
+            ScrollView {
+                segmentEditorBody(segment)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
         }
     }
 
@@ -1123,14 +1133,21 @@ struct PresenterWorkspaceView: View {
     }
 
     private func cameraPicker(angle: PresenterCameraAngle, label: String) -> some View {
+        let selectedID = store.presenterCameraID(for: angle)
         let selection = Binding<String?>(
-            get: { store.presenterCameraID(for: angle) },
+            get: { selectedID },
             set: { store.setPresenterCameraID($0, for: angle) }
         )
+        let selectedIsMissing = selectedID != nil && !cameras.contains(where: { $0.uniqueID == selectedID })
 
         return Picker(label, selection: selection) {
             Text("Not set")
                 .tag(String?.none)
+            if let selectedID, selectedIsMissing {
+                Text("Unknown camera")
+                    .foregroundStyle(.secondary)
+                    .tag(String?.some(selectedID))
+            }
             ForEach(cameras) { camera in
                 Text(camera.name)
                     .tag(String?.some(camera.uniqueID))

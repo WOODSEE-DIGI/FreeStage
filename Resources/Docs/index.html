@@ -45,7 +45,7 @@
                 <li><strong>New Theatre Show</strong> — cue list, scenes, and layers for live shows, comedy, theatre, and projector-based events.</li>
                 <li><strong>New Presenter Show</strong> — segment rundown for person-to-camera work such as news, vlogs, and evidence presentations.</li>
                 <li><strong>Open Show…</strong> — browse for any saved <code>.fst</code> show package.</li>
-                <li><strong>Recent Shows</strong> — pick from the last 20 shows you opened or saved. FreeStage keeps a security-scoped bookmark for each one so sandboxed file access survives relaunches.</li>
+                <li><strong>Recent Shows</strong> — pick from the last 20 shows you opened or saved. FreeStage stores a bookmark for each one so file access survives relaunches.</li>
             </ul>
             <p>Hover over a recent show and right-click to remove it from the list. Selecting a show opens the correct workspace for that show's kind.</p>
         </section>
@@ -70,7 +70,7 @@
             <p><strong>Show Setup &gt; Global Layers</strong> are layers that persist across every presenter segment. Each global layer has a <strong>Placement</strong> of either <strong>Background</strong> (rendered behind the presenter and segment placeholders, e.g. a looping video frame) or <strong>Foreground</strong> (rendered on top, e.g. a logo bug). Add an image, video, or color layer, toggle visibility, rename it, and adjust position, size, opacity, and placement. Per-segment placeholders continue to live only in their own cue.</p>
             <p><strong>Title Card</strong> segments with no placeholder selected are transparent so the global background shows through. Assign a placeholder to the segment when you want title content to appear.</p>
             <p>The presenter <strong>Rundown</strong> sits on the left. Click any cue to edit it — the list collapses to a tight 44 pt icon strip showing the cue number and type icon, and the expanded editor appears beside it. Click the <strong>X</strong> in the editor header to return to the full rundown list.</p>
-            <p>The three main columns — rundown/editor, live/preview monitors, and Show Setup — use a native <strong>HSplitView</strong> with draggable dividers. Drag any divider to resize columns; the dividers work consistently regardless of the selected segment type. The editor column defaults to a wider size so its controls no longer clip or flicker.</p>
+            <p>The three main columns — rundown/editor, live/preview monitors, and Show Setup — are laid out with a native <strong>GeometryReader</strong> and AppKit <strong>DragDivider</strong> views. Drag any divider to resize columns; the dividers track the cursor directly and do not drift or flicker. The rundown/editor column defaults to 380 pt when expanded (minimum 340 pt) and collapses to a 220 pt list when no segment is selected. The Show Setup column defaults to 240 pt (minimum 200 pt) and the live/preview monitors can shrink to 240 pt wide.</p>
             <p>Select any segment to edit its name, type, camera angle, placeholder, video file, and <strong>Auto-follow</strong> setting. When Auto-follow is enabled on a Video Package, FreeStage automatically fires the next segment after the trimmed video duration elapses.</p>
             <p>While a Video Package is live, the transport bar shows <strong>Restart</strong> and <strong>Play/Pause</strong> buttons so you can control playback without opening the Clip Editor.</p>
             <p>For <strong>Camera + Graphic</strong> segments, the segment editor also exposes:</p>
@@ -94,7 +94,7 @@
                 <li><strong>Footer:</strong> Edit/Show mode switch, left inspector toggle, masthead toggle, Panic in the center, and the right sidebar toggle on the far right.</li>
             </ul>
             <div class="tip">
-                <p><strong>Tip:</strong> The workspace requires a minimum window size of 1280 × 760. If FreeStage opens smaller than expected, macOS may have restored a previously saved window frame. Resize the window larger or Option-click the green zoom button to reset it.</p>
+                <p><strong>Tip:</strong> The workspace requires a minimum window size of 1200 × 800. If FreeStage opens smaller than expected, macOS may have restored a previously saved window frame. Resize the window larger or Option-click the green zoom button to reset it.</p>
             </div>
         </section>
 
