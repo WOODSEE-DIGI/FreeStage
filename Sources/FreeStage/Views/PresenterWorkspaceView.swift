@@ -27,8 +27,6 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    @State private var rightColumnWidth: CGFloat = 260
-    @State private var editorContentWidth: CGFloat = 380
     private let iconStripWidth: CGFloat = 44
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
@@ -70,20 +68,16 @@ struct PresenterWorkspaceView: View {
 
                 HSplitView {
                     leftPanel
-                        .frame(
-                            minWidth: isSegmentEditorExpanded ? 360 : 200,
-                            idealWidth: isSegmentEditorExpanded ? iconStripWidth + editorContentWidth : 260,
-                            maxWidth: isSegmentEditorExpanded ? 600 : 400
-                        )
+                        .frame(minWidth: 280, idealWidth: 380, maxWidth: 600)
 
                     VStack(spacing: 12) {
                         liveMonitor
                         previewMonitor
                     }
-                    .frame(minWidth: 400, idealWidth: 760, maxWidth: .infinity)
+                    .frame(minWidth: 400, idealWidth: 700, maxWidth: .infinity)
 
                     placeholderPanel
-                        .frame(minWidth: 220, idealWidth: rightColumnWidth, maxWidth: 450)
+                        .frame(minWidth: 240, idealWidth: 280, maxWidth: 450)
                 }
                 .padding(.horizontal)
 
@@ -92,6 +86,8 @@ struct PresenterWorkspaceView: View {
                     .padding(.bottom)
             }
             .padding(.vertical, 8)
+            .frame(minWidth: 1500, minHeight: 900)
+            .background(WindowFrameInitializer(minSize: NSSize(width: 1500, height: 900)))
         }
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture()
