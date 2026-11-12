@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 @Observable
 final class AppSettings: @unchecked Sendable {
     private enum Key: String {
-        case recordingDirectoryBookmark
+        case recordingDirectoryPath
         case recordingFormat
         case recordingWidth
         case recordingHeight
@@ -95,28 +95,18 @@ final class AppSettings: @unchecked Sendable {
     var recordingDirectory: URL {
         get {
             if let cached = recordingDirectoryResolvedURL { return cached }
-            if let data = defaults.data(forKey: Key.recordingDirectoryBookmark.rawValue) {
-                var isStale = false
-                if let bookmark = try? URL(
-                    resolvingBookmarkData: data,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ), !isStale {
-                    let accessible = bookmark.startAccessingSecurityScopedResource()
-                    if accessible && FileManager.default.fileExists(atPath: bookmark.path) {
-                        recordingDirectoryResolvedURL = bookmark
-                        return bookmark
-                    }
+            if let path = defaults.string(forKey: Key.recordingDirectoryPath.rawValue) {
+                let url = URL(fileURLWithPath: path)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    recordingDirectoryResolvedURL = url
+                    return url
                 }
             }
             return defaultDirectory
         }
         set {
             recordingDirectoryResolvedURL = newValue
-            if let data = try? newValue.bookmarkData(options: .withSecurityScope) {
-                defaults.set(data, forKey: Key.recordingDirectoryBookmark.rawValue)
-            }
+            defaults.set(newValue.path, forKey: Key.recordingDirectoryPath.rawValue)
         }
     }
 
@@ -328,14 +318,9 @@ final class AppSettings: @unchecked Sendable {
         }
     }
 
-    /// Add or move a show to the front of the recent-shows list, keeping a
-    /// security-scoped bookmark so sandboxed access survives relaunches.
-    /// Pass an explicit bookmark when the URL is currently being accessed
-    /// inside a security scope (creating a bookmark after access stops will
-    /// silently fail in the sandbox).
-    func addRecentShow(url: URL, bookmarkData: Data? = nil) {
-        let bookmark = bookmarkData ?? SecurityScopedBookmark.create(for: url)
-        let entry = RecentShow(url: url, bookmarkData: bookmark)
+    /// Add or move a show to the front of the recent-shows list.
+    func addRecentShow(url: URL) {
+        let entry = RecentShow(url: url)
         var recents = recentShows.filter { $0.id != entry.id }
         recents.insert(entry, at: 0)
         recentShows = Array(recents.prefix(20))

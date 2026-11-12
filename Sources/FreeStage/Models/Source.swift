@@ -178,35 +178,12 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
 
     /// Return a copy of this source with file URLs resolved from saved
     /// security-scoped bookmarks when available.
+    ///
+    /// Deprecated: FreeStage no longer runs inside the App Sandbox, so
+    /// security-scoped bookmarks are unnecessary. The method is kept for API
+    /// compatibility.
     func resolvingBookmarks(using bookmarks: [String: Data]) -> Source {
-        func resolve(_ url: URL) -> URL {
-            guard let data = bookmarks[url.absoluteString],
-                  let resolved = SecurityScopedBookmark.resolve(data) else {
-                return url
-            }
-            return resolved
-        }
-
-        switch self {
-        case .media(let url):
-            return .media(url: resolve(url))
-        case .image(let url):
-            return .image(url: resolve(url))
-        case .slideshow(var source):
-            source.imageURLs = source.imageURLs.map(resolve)
-            return .slideshow(source)
-        case .browser(let url, let width, let height):
-            return .browser(url: resolve(url), width: width, height: height)
-        case .facePuppet(let cameraID, let url):
-            return .facePuppet(cameraID: cameraID, puppetImageURL: resolve(url))
-        case .facePuppetAnchored(let cameraID, let url, let anchorMap):
-            return .facePuppetAnchored(cameraID: cameraID, puppetImageURL: resolve(url), anchorMap: anchorMap)
-        case .imageLogoBug(var source):
-            source.imageURL = source.imageURL.map(resolve)
-            return .imageLogoBug(source)
-        default:
-            return self
-        }
+        return self
     }
 
     /// Return a copy of this source with every file URL transformed by `map`.

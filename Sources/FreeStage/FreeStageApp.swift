@@ -248,13 +248,9 @@ struct FreeStageApp: App {
                     panicDuration: store.panicDuration
                 )
 
-                let (savedShow, bookmark) = try accessSecurityScopedResource(url: url) {
-                    let bookmark = SecurityScopedBookmark.create(for: url)
-                    let savedShow = try ShowPackage.write(showToSave, to: url)
-                    return (savedShow, bookmark)
-                }
+                let savedShow = try ShowPackage.write(showToSave, to: url)
                 store.show = savedShow
-                appSettings.addRecentShow(url: url, bookmarkData: bookmark)
+                appSettings.addRecentShow(url: url)
                 appLogger.info("Saved show package to \(url.path)")
             } catch {
                 appLogger.error("Failed to save show: \(error.localizedDescription)")
@@ -270,14 +266,10 @@ struct FreeStageApp: App {
         panel.begin { result in
             guard result == .OK, let url = panel.url else { return }
             do {
-                let (show, bookmark) = try accessSecurityScopedResource(url: url) {
-                    let bookmark = SecurityScopedBookmark.create(for: url)
-                    let show = try ShowPackage.read(from: url)
-                    return (show, bookmark)
-                }
+                let show = try ShowPackage.read(from: url)
                 DispatchQueue.main.async {
                     store.load(show: show)
-                    appSettings.addRecentShow(url: url, bookmarkData: bookmark)
+                    appSettings.addRecentShow(url: url)
                     appLogger.info("Opened show package from \(url.path)")
                 }
             } catch {

@@ -48,9 +48,7 @@ enum ShowPackage {
                 try manager.removeItem(at: destinationURL)
             }
             do {
-                try accessSecurityScopedResource(url: url) {
-                    try manager.copyItem(at: url, to: destinationURL)
-                }
+                try manager.copyItem(at: url, to: destinationURL)
                 assetMap[url] = destinationURL
             } catch {
                 packageLogger.error("Failed to copy asset \(url.path) to package: \(error.localizedDescription)")

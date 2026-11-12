@@ -83,34 +83,11 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
     }
 
     /// Resolve saved bookmarks and apply them to all file URLs in the show.
-    /// Should be called immediately after decoding a show from disk.
+    /// Deprecated: FreeStage no longer runs inside the App Sandbox, so
+    /// security-scoped bookmarks are unnecessary. The method is kept for API
+    /// compatibility with existing callers.
     mutating func resolveBookmarks() {
-        for sceneIndex in scenes.indices {
-            for layerIndex in scenes[sceneIndex].layers.indices {
-                scenes[sceneIndex].layers[layerIndex].resolveBookmarks(using: bookmarks)
-            }
-        }
-        for layerIndex in globalLayers.indices {
-            globalLayers[layerIndex].resolveBookmarks(using: bookmarks)
-        }
-        if presenterRundown != nil {
-            for index in presenterRundown!.segments.indices {
-                if presenterRundown!.segments[index].videoClip != nil {
-                    presenterRundown!.segments[index].videoClip!.sourceURL = resolveBookmarkedURL(presenterRundown!.segments[index].videoClip!.sourceURL)
-                    presenterRundown!.segments[index].videoClip!.proxyURL = presenterRundown!.segments[index].videoClip!.proxyURL.map(resolveBookmarkedURL)
-                    presenterRundown!.segments[index].videoClip!.subclipURL = presenterRundown!.segments[index].videoClip!.subclipURL.map(resolveBookmarkedURL)
-                }
-            }
-        }
-    }
-
-    private func resolveBookmarkedURL(_ url: URL) -> URL {
-        guard url.isFileURL,
-              let data = bookmarks[url.absoluteString],
-              let resolved = SecurityScopedBookmark.resolve(data) else {
-            return url
-        }
-        return resolved
+        // No-op outside the sandbox.
     }
 
     /// Return a copy of the show with every file URL transformed by `map`.
