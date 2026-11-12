@@ -68,32 +68,23 @@ struct PresenterWorkspaceView: View {
                 headerBar
                     .padding(.horizontal)
 
-                HStack(spacing: 0) {
+                HSplitView {
                     leftPanel
-                        .frame(width: isSegmentEditorExpanded ? iconStripWidth + editorContentWidth : 260)
-
-                    ResizableDivider(
-                        width: isSegmentEditorExpanded ? $editorContentWidth : .constant(260),
-                        minWidth: 300,
-                        maxWidth: 520
-                    )
+                        .frame(
+                            minWidth: isSegmentEditorExpanded ? 360 : 200,
+                            idealWidth: isSegmentEditorExpanded ? iconStripWidth + editorContentWidth : 260,
+                            maxWidth: isSegmentEditorExpanded ? 600 : 400
+                        )
 
                     VStack(spacing: 12) {
                         liveMonitor
                         previewMonitor
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    ResizableDivider(
-                        width: $rightColumnWidth,
-                        minWidth: 220,
-                        maxWidth: 450
-                    )
+                    .frame(minWidth: 400, idealWidth: 760, maxWidth: .infinity)
 
                     placeholderPanel
-                        .frame(width: rightColumnWidth)
+                        .frame(minWidth: 220, idealWidth: rightColumnWidth, maxWidth: 450)
                 }
-                .coordinateSpace(name: ResizableDivider.coordinateSpaceName)
                 .padding(.horizontal)
 
                 transportBar
