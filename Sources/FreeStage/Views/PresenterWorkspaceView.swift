@@ -18,6 +18,7 @@ struct PresenterWorkspaceView: View {
     @Environment(\.cameraControlService) private var cameraControlService
     @State private var cameras: [CameraDevice] = []
     @State private var editingSegmentID: UUID?
+    @State private var isSegmentEditorExpanded = false
 
     private var isEditingClip: Binding<Bool> {
         Binding(
@@ -56,8 +57,11 @@ struct PresenterWorkspaceView: View {
                     .padding(.horizontal)
 
                 HStack(spacing: 16) {
-                    segmentRundown
-                        .frame(minWidth: 260, idealWidth: 300)
+                    leftPanel
+                        .frame(
+                            minWidth: isSegmentEditorExpanded ? 360 : 260,
+                            idealWidth: isSegmentEditorExpanded ? 420 : 300
+                        )
 
                     VStack(spacing: 12) {
                         liveMonitor
@@ -137,68 +141,109 @@ struct PresenterWorkspaceView: View {
         }
     }
 
-    // MARK: - Rundown
+    // MARK: - Left panel (rundown + segment editor)
 
-    private var segmentRundown: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Rundown")
-                    .font(.headline)
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Button {
-                    store.addPresenterSegment(type: .cameraGraphic, after: store.activeSegmentID)
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .help("Add segment after the selected one")
-            }
-            .padding([.horizontal, .top])
-            .padding(.bottom, 8)
-
-            if let segments = store.presenterRundown?.segments, !segments.isEmpty {
-                List(selection: .constant(store.activeSegmentID)) {
-                    ForEach(segments) { segment in
-                        segmentRow(segment)
-                            .listRowBackground(rowBackground(for: segment))
-                            .tag(segment.id)
-                    }
-                    .onMove { source, destination in
-                        store.movePresenterSegment(from: source, to: destination)
-                    }
-                    .onDelete { indexSet in
-                        indexSet.forEach { index in
-                            let id = segments[index].id
-                            store.deletePresenterSegment(id: id)
-                        }
-                    }
-                }
-                .listStyle(.plain)
-
-                if let segment = store.activeSegment {
+    private var leftPanel: some View {
+        Group {
+            if isSegmentEditorExpanded, let segment = store.activeSegment {
+                HStack(spacing: 0) {
+                    iconRundown
                     Divider()
-                        .padding(.horizontal)
-                    segmentEditor(segment)
-                        .padding()
+                    expandedSegmentEditor(segment)
                 }
             } else {
-                ContentUnavailableView("No Segments", systemImage: "list.bullet.rectangle")
-                    .foregroundStyle(theme.secondaryText)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Rundown")
+                            .font(.headline)
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                        Button {
+                            store.addPresenterSegment(type: .cameraGraphic, after: store.activeSegmentID)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Add segment after the selected one")
+                    }
+                    .padding([.horizontal, .top])
+                    .padding(.bottom, 8)
+
+                    if let segments = store.presenterRundown?.segments, !segments.isEmpty {
+                        List(selection: .constant(store.activeSegmentID)) {
+                            ForEach(segments) { segment in
+                                segmentRow(segment)
+                                    .listRowBackground(rowBackground(for: segment))
+                                    .tag(segment.id)
+                            }
+                            .onMove { source, destination in
+                                store.movePresenterSegment(from: source, to: destination)
+                            }
+                            .onDelete { indexSet in
+                                indexSet.forEach { index in
+                                    let id = segments[index].id
+                                    store.deletePresenterSegment(id: id)
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+
+                        if let segment = store.activeSegment {
+                            Divider()
+                                .padding(.horizontal)
+                            compactSegmentEditor(segment)
+                                .padding()
+                        }
+                    } else {
+                        ContentUnavailableView("No Segments", systemImage: "list.bullet.rectangle")
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                }
             }
         }
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    /// Narrow icon-only rundown used when the segment editor is expanded.
+    private var iconRundown: some View {
+        ScrollView {
+            VStack(spacing: 4) {
+                ForEach(store.presenterRundown?.segments ?? []) { segment in
+                    Button {
+                        store.selectSegment(id: segment.id)
+                    } label: {
+                        Image(systemName: segment.type.iconName)
+                            .font(.title3)
+                            .foregroundStyle(
+                                segment.id == store.liveSegmentID ? .red :
+                                (segment.id == store.activeSegmentID ? theme.selected : theme.text)
+                            )
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 44, height: 44)
+                    .background(rowBackground(for: segment))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topTrailing) {
+                        if segment.autoFollow {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                                .offset(x: 4, y: -4)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .frame(width: 60)
+    }
+
     // MARK: - Segment editor
 
-    private func segmentEditor(_ segment: PresenterSegment) -> some View {
+    /// The editor controls without a header. Wrapped by compact/expanded panels.
+    private func segmentEditorBody(_ segment: PresenterSegment) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Selected Segment")
-                .font(.subheadline.bold())
-                .foregroundStyle(theme.text)
-
             TextField("Name", text: nameBinding(for: segment))
                 .textFieldStyle(.roundedBorder)
 
@@ -235,6 +280,61 @@ struct PresenterWorkspaceView: View {
 
             TextField("Notes", text: notesBinding(for: segment))
                 .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    /// Editor shown below the rundown list in normal mode.
+    private func compactSegmentEditor(_ segment: PresenterSegment) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Selected Segment")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSegmentEditorExpanded = true
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .foregroundStyle(theme.text)
+                }
+                .buttonStyle(.borderless)
+                .help("Expand segment editor")
+            }
+
+            segmentEditorBody(segment)
+        }
+    }
+
+    /// Full-height editor shown beside the icon rundown when expanded.
+    private func expandedSegmentEditor(_ segment: PresenterSegment) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Selected Segment")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSegmentEditorExpanded = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(theme.text)
+                }
+                .buttonStyle(.borderless)
+                .help("Collapse segment editor")
+            }
+            .padding([.horizontal, .top])
+            .padding(.bottom, 8)
+
+            Divider()
+
+            ScrollView {
+                segmentEditorBody(segment)
+                    .padding()
+            }
         }
     }
 
@@ -308,6 +408,14 @@ struct PresenterWorkspaceView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                HStack {
+                    Text("Hue")
+                    Slider(value: binding.hueShift, in: -.pi...(.pi))
+                    Text("\(binding.wrappedValue.hueShift * 180 / .pi, specifier: "%.0f")°")
+                        .monospacedDigit()
+                        .frame(width: 40, alignment: .trailing)
+                }
 
                 HStack {
                     Text("Threshold")
