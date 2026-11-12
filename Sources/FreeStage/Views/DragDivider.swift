@@ -3,52 +3,41 @@
 //  FreeStage
 //
 //  AppKit-based vertical divider. Reports raw mouse deltaX during a drag so
-//  the parent can resize columns reliably. Implemented as an
-//  NSViewControllerRepresentable because that gives more reliable mouse-event
-//  delivery inside SwiftUI than NSViewRepresentable for interactive controls.
+//  the parent can resize columns reliably.
 //
 
 import SwiftUI
 import AppKit
 
-struct DragDivider: NSViewControllerRepresentable {
+struct DragDivider: NSViewRepresentable {
     let onDrag: (CGFloat) -> Void
 
-    func makeNSViewController(context: Context) -> DragDividerViewController {
-        let controller = DragDividerViewController()
-        controller.onDrag = onDrag
-        return controller
+    func makeNSView(context: Context) -> DragDividerView {
+        let view = DragDividerView()
+        view.coordinator = context.coordinator
+        return view
     }
 
-    func updateNSViewController(_ nsViewController: DragDividerViewController, context: Context) {
-        nsViewController.onDrag = onDrag
-    }
-}
-
-final class DragDividerViewController: NSViewController {
-    var onDrag: ((CGFloat) -> Void)?
-
-    override func loadView() {
-        view = DragDividerView()
+    func updateNSView(_ nsView: DragDividerView, context: Context) {
+        context.coordinator.onDrag = onDrag
+        nsView.coordinator = context.coordinator
     }
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        (view as? DragDividerView)?.onDrag = { [weak self] delta in
-            self?.onDrag?(delta)
-        }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDrag: onDrag)
     }
 
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        (view as? DragDividerView)?.onDrag = { [weak self] delta in
-            self?.onDrag?(delta)
+    final class Coordinator: NSObject {
+        var onDrag: (CGFloat) -> Void
+
+        init(onDrag: @escaping (CGFloat) -> Void) {
+            self.onDrag = onDrag
         }
     }
 }
 
 final class DragDividerView: NSView {
-    var onDrag: ((CGFloat) -> Void)?
+    weak var coordinator: DragDivider.Coordinator?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -64,10 +53,9 @@ final class DragDividerView: NSView {
 
     private func commonInit() {
         wantsLayer = true
-        autoresizingMask = [.width, .height]
-        // A near-transparent layer background ensures the full 14 pt strip
-        // participates in hit-testing, not just the 1 pt visible line.
-        layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.001).cgColor
+        // Slightly tinted layer background so the full 14 pt strip participates
+        // in hit-testing, not just the 1 pt visible line.
+        layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.05).cgColor
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -78,11 +66,11 @@ final class DragDividerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
+        _ = window?.makeFirstResponder(self)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        onDrag?(CGFloat(event.deltaX))
+        coordinator?.onDrag(CGFloat(event.deltaX))
     }
 
     override func mouseUp(with event: NSEvent) {
