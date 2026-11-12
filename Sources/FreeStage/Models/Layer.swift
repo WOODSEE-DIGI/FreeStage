@@ -9,6 +9,12 @@
 import Foundation
 
 struct Layer: Identifiable, Hashable, Codable, Sendable {
+    /// Where the layer sits relative to the segment content.
+    enum Placement: String, Codable, Sendable, CaseIterable {
+        case background
+        case foreground
+    }
+
     let id: UUID
     var name: String
     var source: Source
@@ -20,6 +26,9 @@ struct Layer: Identifiable, Hashable, Codable, Sendable {
     var isLocked: Bool
     /// Per-layer camera controls. Only used when `source` is a camera.
     var cameraSettings: CameraSettings?
+    /// For presenter global layers: render behind segment content
+    /// (`.background`) or on top of it (`.foreground`).
+    var placement: Placement
 
     init(
         id: UUID = UUID(),
@@ -31,7 +40,8 @@ struct Layer: Identifiable, Hashable, Codable, Sendable {
         opacity: Double = 1.0,
         isVisible: Bool = true,
         isLocked: Bool = false,
-        cameraSettings: CameraSettings? = nil
+        cameraSettings: CameraSettings? = nil,
+        placement: Placement = .foreground
     ) {
         self.id = id
         self.name = name ?? source.defaultName
@@ -43,6 +53,7 @@ struct Layer: Identifiable, Hashable, Codable, Sendable {
         self.isVisible = isVisible
         self.isLocked = isLocked
         self.cameraSettings = cameraSettings
+        self.placement = placement
     }
 
     /// Resolve security-scoped bookmarks for this layer's source and filters.

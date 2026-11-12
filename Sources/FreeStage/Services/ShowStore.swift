@@ -1298,6 +1298,14 @@ final class ShowStore: NSObject {
             ))
         }
 
+        // Global layers marked as background are composited behind segment
+        // content. This lets a looping video fill the frame while the
+        // presenter/screenshare sit on top.
+        if let backgroundLayers = show.presenterRundown?.globalLayers
+            .filter({ $0.placement == .background && $0.isVisible }) {
+            layers.append(contentsOf: backgroundLayers)
+        }
+
         switch segment.type {
         case .cameraGraphic:
             if let cameraID = presenterCameraID(for: segment.cameraAngle) {
@@ -1380,8 +1388,9 @@ final class ShowStore: NSObject {
 
         // Global overlays (logo bugs, lower-thirds, etc.) appear on top of
         // every presenter segment.
-        if let globalLayers = show.presenterRundown?.globalLayers {
-            layers.append(contentsOf: globalLayers.filter(\.isVisible))
+        if let foregroundLayers = show.presenterRundown?.globalLayers
+            .filter({ $0.placement == .foreground && $0.isVisible }) {
+            layers.append(contentsOf: foregroundLayers)
         }
 
         return Scene(name: segment.name, layers: layers, outputSize: CGSize(width: 1920, height: 1080))

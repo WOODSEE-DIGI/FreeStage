@@ -1005,6 +1005,13 @@ struct PresenterWorkspaceView: View {
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
             Spacer()
+            Text(layer.placement == .background ? "BG" : "FG")
+                .font(.caption2.bold())
+                .foregroundStyle(theme.secondaryText)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(theme.secondaryText.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
             Button {
                 store.updatePresenterGlobalLayer(id: layer.id) { $0.isVisible.toggle() }
             } label: {
@@ -1037,6 +1044,18 @@ struct PresenterWorkspaceView: View {
                 }
             ))
             .textFieldStyle(.roundedBorder)
+            .font(.caption)
+
+            Picker("Placement", selection: Binding(
+                get: { layer.placement },
+                set: { newValue in
+                    store.updatePresenterGlobalLayer(id: layer.id) { $0.placement = newValue }
+                }
+            )) {
+                Text("Background").tag(Layer.Placement.background)
+                Text("Foreground").tag(Layer.Placement.foreground)
+            }
+            .pickerStyle(.segmented)
             .font(.caption)
 
             HStack {
