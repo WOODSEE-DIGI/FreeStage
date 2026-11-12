@@ -52,8 +52,14 @@ struct VideoControlsView: View {
             case .success(let urls):
                 guard let url = urls.first else { return }
                 store.updateSelectedLayer { layer in
-                    guard case .media = layer.source else { return }
-                    layer.source = .media(url: url)
+                    switch layer.source {
+                    case .media:
+                        layer.source = .media(url: url)
+                    case .mediaClip(_, let inPoint, let outPoint):
+                        layer.source = .mediaClip(url: url, inPoint: inPoint, outPoint: outPoint)
+                    default:
+                        return
+                    }
                 }
             case .failure:
                 break

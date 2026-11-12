@@ -16,6 +16,10 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     case camera(deviceID: String)
     case screen(displayID: CGDirectDisplayID)
     case media(url: URL)
+    /// Media source with explicit In/Out trim range. Used by presenter Video
+    /// Package segments so the trimmed section plays without requiring a
+    /// separate exported subclip.
+    case mediaClip(url: URL, inPoint: TimeInterval, outPoint: TimeInterval?)
     case image(url: URL)
     case slideshow(SlideshowSource)
     case browser(url: URL, width: Int, height: Int)
@@ -44,6 +48,8 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         case .camera(let id): return "camera:\(id)"
         case .screen(let id): return "screen:\(id)"
         case .media(let url): return "media:\(url.path)"
+        case .mediaClip(let url, let inPoint, let outPoint):
+            return "mediaClip:\(url.path):\(inPoint):\(outPoint ?? -1)"
         case .image(let url): return "image:\(url.path)"
         case .slideshow(let s): return "slideshow:\(s.id)"
         case .browser(let url, let w, let h): return "browser:\(url.absoluteString):\(w)x\(h)"
@@ -75,7 +81,8 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
             return appName.map { "\($0) – \(name)" } ?? name
         case .camera: return "Camera"
         case .screen: return "Screen"
-        case .media(let url): return url.deletingPathExtension().lastPathComponent
+        case .media(let url), .mediaClip(let url, _, _):
+            return url.deletingPathExtension().lastPathComponent
         case .image(let url): return url.deletingPathExtension().lastPathComponent
         case .slideshow(let s): return "Slideshow (\(s.imageURLs.count))"
         case .browser(let url, _, _): return url.host ?? "Browser"
@@ -105,7 +112,7 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         switch self {
         case .camera(let deviceID): return "camera:\(deviceID)"
         case .screen(let displayID): return "screen:\(displayID)"
-        case .media(let url): return "media:\(url.path)"
+        case .media(let url), .mediaClip(let url, _, _): return "media:\(url.path)"
         case .image(let url): return "image:\(url.path)"
         case .slideshow: return "slideshow"
         case .browser: return "browser"
@@ -139,7 +146,7 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     /// rectangle by default.
     var preservesAspect: Bool {
         switch self {
-        case .image, .media, .slideshow, .ndi, .syphon, .browser:
+        case .image, .media, .mediaClip, .slideshow, .ndi, .syphon, .browser:
             return true
         default:
             return false
@@ -161,7 +168,7 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
     /// to create security-scoped bookmarks for sandbox persistence.
     func fileURLs() -> [URL] {
         switch self {
-        case .media(let url), .image(let url):
+        case .media(let url), .mediaClip(let url, _, _), .image(let url):
             return [url]
         case .slideshow(let source):
             return source.imageURLs
@@ -191,6 +198,8 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         switch self {
         case .media(let url):
             return .media(url: map(url))
+        case .mediaClip(let url, let inPoint, let outPoint):
+            return .mediaClip(url: map(url), inPoint: inPoint, outPoint: outPoint)
         case .image(let url):
             return .image(url: map(url))
         case .slideshow(var source):

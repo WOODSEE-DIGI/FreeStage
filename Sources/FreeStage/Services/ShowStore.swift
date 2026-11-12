@@ -682,9 +682,13 @@ final class ShowStore: NSObject {
 
     /// The video URL if the selected layer is a media source.
     var selectedLayerMedia: URL? {
-        guard let layer = selectedLayer,
-              case .media(let url) = layer.source else { return nil }
-        return url
+        guard let layer = selectedLayer else { return nil }
+        switch layer.source {
+        case .media(let url), .mediaClip(let url, _, _):
+            return url
+        default:
+            return nil
+        }
     }
 
     /// Update the animation state of any selected animatable template layer.
@@ -1290,10 +1294,18 @@ final class ShowStore: NSObject {
             }
 
         case .videoPackage:
-            if let url = segment.videoClip?.playbackURL {
+            if let clip = segment.videoClip {
+                let source: Source
+                if let subclipURL = clip.subclipURL {
+                    // Pre-exported subclip takes priority for performance.
+                    source = .media(url: subclipURL)
+                } else {
+                    // Play the trimmed range directly from the original file.
+                    source = .mediaClip(url: clip.sourceURL, inPoint: clip.inPoint, outPoint: clip.outPoint)
+                }
                 layers.append(Layer(
                     name: segment.name,
-                    source: .media(url: url),
+                    source: source,
                     transform: .identity
                 ))
             } else {

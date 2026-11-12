@@ -3,8 +3,9 @@
 //  FreeStage
 //
 //  Renders a video file source into a Metal texture using AVPlayer.
-//  The video loops automatically and is suitable for backgrounds
-//  behind a chroma-keyed layer.
+//  Supports full-file `.media` sources and trimmed `.mediaClip` sources
+//  (In/Out points) so presenter Video Package segments play only the
+//  selected range without requiring an exported subclip.
 //
 
 @preconcurrency import AVFoundation
@@ -13,9 +14,26 @@ import CoreVideo
 import Metal
 import Foundation
 
+/// Unique key for a media rendering session. The same URL with different
+/// In/Out trim ranges needs separate sessions so each layer plays its own
+/// section.
+private struct MediaSessionKey: Hashable {
+    let url: URL
+    let inPoint: TimeInterval
+    let outPoint: TimeInterval?
+
+    init(url: URL, inPoint: TimeInterval = 0, outPoint: TimeInterval? = nil) {
+        self.url = url
+        self.inPoint = inPoint
+        self.outPoint = outPoint
+    }
+}
+
 final class MediaSourceRenderer: @unchecked Sendable {
     private final class Session: @unchecked Sendable {
         let url: URL
+        let inPoint: TimeInterval
+        let outPoint: TimeInterval?
         let player: AVPlayer
         let output: AVPlayerItemVideoOutput
         let item: AVPlayerItem
@@ -29,8 +47,10 @@ final class MediaSourceRenderer: @unchecked Sendable {
             let texture: MTLTexture
         }
 
-        init?(url: URL, device: MTLDevice) {
+        init?(url: URL, inPoint: TimeInterval = 0, outPoint: TimeInterval? = nil, device: MTLDevice) {
             self.url = url
+            self.inPoint = inPoint
+            self.outPoint = outPoint
             self.securityScopedAccessing = url.startAccessingSecurityScopedResource()
             let item = AVPlayerItem(url: url)
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
@@ -38,7 +58,13 @@ final class MediaSourceRenderer: @unchecked Sendable {
                 kCVPixelBufferMetalCompatibilityKey as String: true
             ])
             item.add(output)
-            item.forwardPlaybackEndTime = CMTime.invalid
+
+            if let outPoint, outPoint > 0 {
+                item.forwardPlaybackEndTime = CMTime(seconds: outPoint, preferredTimescale: 600)
+            } else {
+                item.forwardPlaybackEndTime = CMTime.invalid
+            }
+
             self.item = item
             self.output = output
             self.player = AVPlayer(playerItem: item)
@@ -60,9 +86,16 @@ final class MediaSourceRenderer: @unchecked Sendable {
                 queue: nil
             ) { [weak self] _ in
                 guard let self else { return }
-                self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                let start = CMTime(seconds: self.inPoint, preferredTimescale: 600)
+                self.player.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
                     self.player.play()
                 }
+            }
+
+            // Start at the In point so the first frame is already trimmed.
+            if inPoint > 0 {
+                let start = CMTime(seconds: inPoint, preferredTimescale: 600)
+                player.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero)
             }
         }
 
@@ -111,7 +144,7 @@ final class MediaSourceRenderer: @unchecked Sendable {
         }
     }
 
-    private var sessions: [URL: Session] = [:]
+    private var sessions: [MediaSessionKey: Session] = [:]
     private let lock = NSLock()
 
     func render(
@@ -119,15 +152,25 @@ final class MediaSourceRenderer: @unchecked Sendable {
         device: MTLDevice,
         commandQueue: MTLCommandQueue
     ) throws -> MTLTexture? {
-        guard case .media(let url) = source else { return nil }
+        let (url, inPoint, outPoint): (URL, TimeInterval, TimeInterval?)
+        switch source {
+        case .media(let mediaURL):
+            (url, inPoint, outPoint) = (mediaURL, 0, nil)
+        case .mediaClip(let mediaURL, let clipIn, let clipOut):
+            (url, inPoint, outPoint) = (mediaURL, clipIn, clipOut)
+        default:
+            return nil
+        }
+
+        let key = MediaSessionKey(url: url, inPoint: inPoint, outPoint: outPoint)
 
         lock.lock()
         defer { lock.unlock() }
 
-        if sessions[url] == nil {
-            sessions[url] = Session(url: url, device: device)
+        if sessions[key] == nil {
+            sessions[key] = Session(url: url, inPoint: inPoint, outPoint: outPoint, device: device)
         }
-        guard let session = sessions[url] else { return nil }
+        guard let session = sessions[key] else { return nil }
         session.start()
         return session.currentFrame()
     }

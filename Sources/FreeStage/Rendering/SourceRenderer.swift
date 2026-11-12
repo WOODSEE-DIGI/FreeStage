@@ -67,7 +67,7 @@ struct SourceRendererRegistry: Sendable {
             return try textRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .border, .lowerThird, .chapterMarker, .nextSection, .socialBug, .logoBug, .countdownTimer, .imageLogoBug, .ticker, .playlist:
             return try templateRenderer.render(source: source, device: device, commandQueue: commandQueue)
-        case .media:
+        case .media, .mediaClip:
             return try mediaRenderer.render(source: source, device: device, commandQueue: commandQueue)
         case .camera:
             return try cameraRenderer.render(source: source, device: device, commandQueue: commandQueue)
@@ -119,7 +119,7 @@ extension Source {
         case .syphon: return .syphon
         case .camera: return .camera
         case .screen: return .screen
-        case .media: return .media
+        case .media, .mediaClip: return .media
         case .image: return .image
         case .slideshow: return .slideshow
         case .drawing: return .drawing
