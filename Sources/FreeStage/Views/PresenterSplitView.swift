@@ -23,6 +23,7 @@ struct PresenterSplitView: NSViewRepresentable {
         splitView.dividerStyle = .thin
         splitView.autoresizingMask = [.width, .height]
         splitView.delegate = context.coordinator
+        context.coordinator.splitView = splitView
 
         let leftHC = NSHostingController(rootView: leftContent)
         let centreHC = NSHostingController(rootView: centreContent)
@@ -44,7 +45,6 @@ struct PresenterSplitView: NSViewRepresentable {
         splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 2)
 
         context.coordinator.hostingControllers = [leftHC, centreHC, rightHC]
-        context.coordinator.splitView = splitView
         context.coordinator.isSegmentEditorExpanded = isSegmentEditorExpanded
         context.coordinator.hasSetInitialPositions = false
 
@@ -65,9 +65,13 @@ struct PresenterSplitView: NSViewRepresentable {
         // hosting controllers are still resizing can collapse the side panels.
         if expandedChanged {
             context.coordinator.hasSetInitialPositions = false
-            DispatchQueue.main.async {
-                if context.coordinator.applyDefaultPositions(in: nsView, animated: true) {
-                    context.coordinator.hasSetInitialPositions = true
+            let coordinator = context.coordinator
+            Task { @MainActor in
+                // One runloop turn of slack so the hosting controllers finish
+                // their layout pass before the dividers move.
+                await Task.yield()
+                if coordinator.applyDefaultPositions(in: nsView, animated: true) {
+                    coordinator.hasSetInitialPositions = true
                 }
             }
         }
@@ -83,6 +87,13 @@ struct PresenterSplitView: NSViewRepresentable {
         var isSegmentEditorExpanded = false
         var hasSetInitialPositions = false
 
+        /// Guards against re-entrant position updates. `NSSplitView.setPosition(_:ofDividerAt:)`
+        /// posts `splitViewDidResizeSubviews` synchronously, so applying the
+        /// defaults from inside that notification re-enters this method before
+        /// `hasSetInitialPositions` can be set, recursing until the stack
+        /// overflows.
+        private var isApplyingPositions = false
+
         private let leftExpandedMin: CGFloat = 580
         private let leftCollapsedMin: CGFloat = 220
         private let rightMin: CGFloat = 200
@@ -96,8 +107,11 @@ struct PresenterSplitView: NSViewRepresentable {
             ofSubviewAt dividerIndex: Int
         ) -> CGFloat {
             let leftMin = isSegmentEditorExpanded ? leftExpandedMin : leftCollapsedMin
-            // Divider 0: left panel minimum. Divider 1: left + centre minimum.
-            return dividerIndex == 0 ? leftMin : leftMin + centreMin
+            // Divider 0: left panel minimum. Divider 1: left pane, the first
+            // divider and the centre pane minimum.
+            return dividerIndex == 0
+                ? leftMin
+                : leftMin + splitView.dividerThickness + centreMin
         }
 
         func splitView(
@@ -117,9 +131,10 @@ struct PresenterSplitView: NSViewRepresentable {
         /// toggles, so the tools panel opens wide enough and the monitors stay
         /// usable. Returns false when the split view is still too small to
         /// honour the defaults, so the caller can retry on the next layout pass.
+        @MainActor
         @discardableResult
         func applyDefaultPositions(in splitView: NSSplitView, animated: Bool) -> Bool {
-            guard splitView.subviews.count == 3 else { return false }
+            guard !isApplyingPositions, splitView.arrangedSubviews.count == 3 else { return false }
             let total = splitView.bounds.width
             let dividerThickness = splitView.dividerThickness
             let leftDefault: CGFloat = isSegmentEditorExpanded ? 640 : 240
@@ -137,6 +152,15 @@ struct PresenterSplitView: NSViewRepresentable {
                 total - rightDefault - dividerThickness
             )
 
+            // Skip redundant updates: every `setPosition` call triggers a
+            // synchronous did-resize notification and another layout pass.
+            let leftIsSettled = abs(splitView.arrangedSubviews[0].frame.width - leftPosition) < 0.5
+            let rightIsSettled = abs(splitView.arrangedSubviews[2].frame.width - rightDefault) < 0.5
+            guard !(leftIsSettled && rightIsSettled) else { return true }
+
+            isApplyingPositions = true
+            defer { isApplyingPositions = false }
+
             if animated {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.15
@@ -150,10 +174,22 @@ struct PresenterSplitView: NSViewRepresentable {
             return true
         }
 
+        // MARK: - NSSplitViewDelegate
+
         func splitViewDidResizeSubviews(_ notification: Notification) {
-            guard let splitView = notification.object as? NSSplitView,
-                  splitView.subviews.count == 3,
-                  !hasSetInitialPositions else { return }
+            // AppKit delivers split-view notifications on the main thread.
+            MainActor.assumeIsolated {
+                applyInitialPositionsIfNeeded(for: notification)
+            }
+        }
+
+        @MainActor
+        private func applyInitialPositionsIfNeeded(for notification: Notification) {
+            guard !isApplyingPositions,
+                  !hasSetInitialPositions,
+                  let splitView = notification.object as? NSSplitView,
+                  splitView === self.splitView,
+                  splitView.arrangedSubviews.count == 3 else { return }
 
             if applyDefaultPositions(in: splitView, animated: false) {
                 hasSetInitialPositions = true
