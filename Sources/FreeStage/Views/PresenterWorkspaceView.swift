@@ -84,10 +84,31 @@ struct PresenterWorkspaceView: View {
                         totalHeight: geometry.size.height
                     )
 
-                    HStack(spacing: 0) {
-                        leftPanel(totalWidth: leftWidth)
-                            .frame(minWidth: leftWidth, maxWidth: leftWidth)
+                    // The dividers are rendered in a separate overlay layer so
+                    // they sit above the live/preview MetalCanvasViews and the
+                    // left List, guaranteeing they receive mouse events.
+                    ZStack {
+                        HStack(spacing: 0) {
+                            leftPanel(totalWidth: leftWidth)
+                                .frame(minWidth: leftWidth, maxWidth: leftWidth)
 
+                            Color.clear
+                                .frame(width: dividerThickness)
+
+                            VStack(spacing: 12) {
+                                liveMonitor
+                                previewMonitor
+                            }
+                            .frame(minWidth: centreMin, maxWidth: centerWidth)
+
+                            Color.clear
+                                .frame(width: dividerThickness)
+
+                            placeholderPanel
+                                .frame(minWidth: rightWidth, maxWidth: rightWidth)
+                        }
+
+                        // Divider 1: between rundown/editor and live/preview.
                         DragDivider { delta in
                             if isSegmentEditorExpanded {
                                 let newLeft = leftColumnWidth + delta
@@ -98,27 +119,21 @@ struct PresenterWorkspaceView: View {
                             }
                         }
                         .frame(width: dividerThickness)
-                        .zIndex(1)
+                        .position(
+                            x: leftWidth + dividerThickness / 2,
+                            y: geometry.size.height / 2
+                        )
 
-                        VStack(spacing: 12) {
-                            liveMonitor
-                            previewMonitor
-                        }
-                        .frame(minWidth: centreMin, maxWidth: centerWidth)
-
+                        // Divider 2: between live/preview and Show Setup.
                         DragDivider { delta in
-                            // Standard split-view behaviour: dragging the right
-                            // divider right makes the right column narrower and
-                            // the centre column wider, so the divider follows
-                            // the cursor.
                             let newRight = rightColumnWidth - delta
                             rightColumnWidth = min(max(newRight, rightMin), rightMax)
                         }
                         .frame(width: dividerThickness)
-                        .zIndex(1)
-
-                        placeholderPanel
-                            .frame(minWidth: rightWidth, maxWidth: rightWidth)
+                        .position(
+                            x: leftWidth + dividerThickness + centerWidth + dividerThickness / 2,
+                            y: geometry.size.height / 2
+                        )
                     }
                     .transaction { $0.animation = nil }
                 }
