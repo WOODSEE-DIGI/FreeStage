@@ -47,26 +47,36 @@ struct WindowFrameInitializer: NSViewRepresentable {
                 return
             }
 
-            window.minSize = minSize
-
             var frame = window.frame
             let needsResize = frame.size.width < minSize.width || frame.size.height < minSize.height
-            guard needsResize else { return }
-
-            frame.size.width = max(frame.size.width, minSize.width)
-            frame.size.height = max(frame.size.height, minSize.height)
 
             if let screen = window.screen {
                 let maxFrame = screen.visibleFrame
-                if frame.maxX > maxFrame.maxX {
-                    frame.origin.x = maxFrame.maxX - frame.size.width
-                }
-                if frame.maxY > maxFrame.maxY {
-                    frame.origin.y = maxFrame.maxY - frame.size.height
-                }
-                if frame.origin.y < maxFrame.origin.y {
-                    frame.origin.y = maxFrame.origin.y
-                }
+                let availableSize = maxFrame.size
+
+                // Ensure the requested minimum fits on the current screen. If the
+                // screen is too small, clamp to the visible area to avoid negative
+                // view geometry warnings from AppKit.
+                let clampedMinSize = NSSize(
+                    width: min(minSize.width, availableSize.width),
+                    height: min(minSize.height, availableSize.height)
+                )
+                window.minSize = clampedMinSize
+
+                guard needsResize else { return }
+
+                frame.size.width = max(frame.size.width, clampedMinSize.width)
+                frame.size.height = max(frame.size.height, clampedMinSize.height)
+                frame.size.width = min(frame.size.width, availableSize.width)
+                frame.size.height = min(frame.size.height, availableSize.height)
+
+                frame.origin.x = max(maxFrame.origin.x, min(frame.origin.x, maxFrame.maxX - frame.size.width))
+                frame.origin.y = max(maxFrame.origin.y, min(frame.origin.y, maxFrame.maxY - frame.size.height))
+            } else {
+                window.minSize = minSize
+                guard needsResize else { return }
+                frame.size.width = max(frame.size.width, minSize.width)
+                frame.size.height = max(frame.size.height, minSize.height)
             }
 
             window.setFrame(frame, display: true, animate: false)
