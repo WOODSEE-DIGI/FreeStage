@@ -3,7 +3,9 @@
 //  FreeStage
 //
 //  AppKit-based vertical divider. Reports raw mouse deltaX during a drag so
-//  the parent can resize columns reliably.
+//  the parent can resize columns reliably. Uses a local event monitor during
+//  the drag so it keeps receiving events even if the view moves or another
+//  SwiftUI view would otherwise intercept them.
 //
 
 import SwiftUI
@@ -38,6 +40,7 @@ struct DragDivider: NSViewRepresentable {
 
 final class DragDividerView: NSView {
     weak var coordinator: DragDivider.Coordinator?
+    private var eventMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -66,14 +69,34 @@ final class DragDividerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        _ = window?.makeFirstResponder(self)
-    }
+        window?.makeFirstResponder(self)
 
-    override func mouseDragged(with event: NSEvent) {
-        coordinator?.onDrag(CGFloat(event.deltaX))
+        // Install a local event monitor so drag/up events are captured even if
+        // the divider view moves under the cursor during the drag.
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            guard let self else { return event }
+            switch event.type {
+            case .leftMouseDragged:
+                self.coordinator?.onDrag(CGFloat(event.deltaX))
+                return nil
+            case .leftMouseUp:
+                self.endDrag()
+                return event
+            default:
+                return event
+            }
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
+        endDrag()
+    }
+
+    private func endDrag() {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
         window?.makeFirstResponder(nil)
     }
 
