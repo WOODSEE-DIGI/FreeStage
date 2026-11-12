@@ -1224,6 +1224,34 @@ final class ShowStore: NSObject {
         return rundown.placeholders.first { $0.id == id }
     }
 
+    // MARK: - Presenter global layers
+
+    @discardableResult
+    func addPresenterGlobalLayer(source: Source, name: String? = nil) -> UUID {
+        guard var rundown = show.presenterRundown else { return UUID() }
+        let layer = Layer(
+            name: name ?? source.defaultName,
+            source: source,
+            transform: .identity
+        )
+        rundown.globalLayers.append(layer)
+        show.presenterRundown = rundown
+        return layer.id
+    }
+
+    func deletePresenterGlobalLayer(id: UUID) {
+        guard var rundown = show.presenterRundown else { return }
+        rundown.globalLayers.removeAll { $0.id == id }
+        show.presenterRundown = rundown
+    }
+
+    func updatePresenterGlobalLayer(id: UUID, mutation: (inout Layer) -> Void) {
+        guard var rundown = show.presenterRundown,
+              let index = rundown.globalLayers.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&rundown.globalLayers[index])
+        show.presenterRundown = rundown
+    }
+
     func setPresenterCameraID(_ deviceID: String?, for angle: PresenterCameraAngle) {
         guard var rundown = show.presenterRundown else { return }
         switch angle {
@@ -1348,6 +1376,12 @@ final class ShowStore: NSObject {
                 source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
                 transform: .identity
             ))
+        }
+
+        // Global overlays (logo bugs, lower-thirds, etc.) appear on top of
+        // every presenter segment.
+        if let globalLayers = show.presenterRundown?.globalLayers {
+            layers.append(contentsOf: globalLayers.filter(\.isVisible))
         }
 
         return Scene(name: segment.name, layers: layers, outputSize: CGSize(width: 1920, height: 1080))

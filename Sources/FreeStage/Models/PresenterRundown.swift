@@ -27,6 +27,9 @@ struct PresenterRundown: Identifiable, Hashable, Codable, Sendable {
     var backgroundSource: Source?
     /// Transform for the global background source.
     var backgroundTransform: ItemTransform
+    /// Layers shown on top of every presenter segment (e.g. logo bugs,
+    /// lower-thirds, tickers). Rendered after the segment content.
+    var globalLayers: [Layer]
 
     init(
         id: UUID = UUID(),
@@ -35,7 +38,8 @@ struct PresenterRundown: Identifiable, Hashable, Codable, Sendable {
         primaryCameraID: String? = nil,
         secondaryCameraID: String? = nil,
         backgroundSource: Source? = nil,
-        backgroundTransform: ItemTransform = .identity
+        backgroundTransform: ItemTransform = .identity,
+        globalLayers: [Layer] = []
     ) {
         self.id = id
         self.segments = segments
@@ -44,6 +48,7 @@ struct PresenterRundown: Identifiable, Hashable, Codable, Sendable {
         self.secondaryCameraID = secondaryCameraID
         self.backgroundSource = backgroundSource
         self.backgroundTransform = backgroundTransform
+        self.globalLayers = globalLayers
     }
 
     /// A default starter rundown with one of each segment type.

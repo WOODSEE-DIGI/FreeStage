@@ -24,6 +24,9 @@ struct PresenterWorkspaceView: View {
     @State private var playbackRefreshID = UUID()
     @State private var isPickingChromaBackground = false
     @State private var isPickingGlobalBackground = false
+    @State private var isPickingGlobalLayerImage = false
+    @State private var isPickingGlobalLayerVideo = false
+    @State private var selectedGlobalLayerID: UUID?
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -140,6 +143,26 @@ struct PresenterWorkspaceView: View {
             rundown.backgroundSource = source
             rundown.backgroundTransform = .identity
             store.show.presenterRundown = rundown
+        }
+        .fileImporter(
+            isPresented: $isPickingGlobalLayerImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            let id = store.addPresenterGlobalLayer(source: .image(url: url))
+            selectedGlobalLayerID = id
+        }
+        .fileImporter(
+            isPresented: $isPickingGlobalLayerVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            let id = store.addPresenterGlobalLayer(source: .media(url: url))
+            selectedGlobalLayerID = id
         }
     }
 
@@ -833,6 +856,14 @@ struct PresenterWorkspaceView: View {
                     .background(theme.background.opacity(0.5))
             }
 
+            Divider()
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
+            globalLayersSection
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
             Spacer()
         }
         .background(theme.panelBackground)
@@ -911,6 +942,149 @@ struct PresenterWorkspaceView: View {
                 .font(.caption)
             }
         }
+    }
+
+    // MARK: - Global layers (show in all scenes)
+
+    private var globalLayersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Global Layers")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Menu {
+                    Button("Image…") { isPickingGlobalLayerImage = true }
+                    Button("Video…") { isPickingGlobalLayerVideo = true }
+                    Button("Color") {
+                        let id = store.addPresenterGlobalLayer(
+                            source: .color(CGColorComponents(r: 1, g: 0, b: 0, a: 1)),
+                            name: "Color"
+                        )
+                        selectedGlobalLayerID = id
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .help("Add a layer shown in every segment")
+            }
+
+            if let layers = store.presenterRundown?.globalLayers, !layers.isEmpty {
+                List(selection: .constant(selectedGlobalLayerID)) {
+                    ForEach(layers) { layer in
+                        globalLayerRow(layer)
+                            .tag(layer.id)
+                    }
+                    .onDelete { indexSet in
+                        indexSet.forEach { index in
+                            let id = layers[index].id
+                            store.deletePresenterGlobalLayer(id: id)
+                            if selectedGlobalLayerID == id { selectedGlobalLayerID = nil }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .frame(height: min(CGFloat(layers.count) * 32 + 8, 120))
+
+                if let layer = store.presenterRundown?.globalLayers.first(where: { $0.id == selectedGlobalLayerID }) {
+                    globalLayerEditor(layer)
+                }
+            } else {
+                ContentUnavailableView("No Global Layers", systemImage: "square.3.layers.3d")
+                    .foregroundStyle(theme.secondaryText)
+            }
+        }
+    }
+
+    private func globalLayerRow(_ layer: Layer) -> some View {
+        HStack {
+            Image(systemName: iconName(for: layer.source))
+                .foregroundStyle(theme.accent)
+            Text(layer.name)
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+            Spacer()
+            Button {
+                store.updatePresenterGlobalLayer(id: layer.id) { $0.isVisible.toggle() }
+            } label: {
+                Image(systemName: layer.isVisible ? "eye" : "eye.slash")
+            }
+            .buttonStyle(.borderless)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedGlobalLayerID = layer.id
+        }
+        .background(selectedGlobalLayerID == layer.id ? theme.selected.opacity(0.12) : Color.clear)
+    }
+
+    private func iconName(for source: Source) -> String {
+        switch source {
+        case .image: return "photo"
+        case .media, .mediaClip: return "film"
+        case .color: return "paintpalette"
+        default: return "questionmark.square"
+        }
+    }
+
+    private func globalLayerEditor(_ layer: Layer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Name", text: Binding(
+                get: { layer.name },
+                set: { newValue in
+                    store.updatePresenterGlobalLayer(id: layer.id) { $0.name = newValue }
+                }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(.caption)
+
+            HStack {
+                Text("X")
+                    .frame(width: 16)
+                Slider(value: Binding(
+                    get: { layer.transform.x },
+                    set: { newValue in
+                        store.updatePresenterGlobalLayer(id: layer.id) { $0.transform.x = newValue }
+                    }
+                ), in: 0...1)
+            }
+            HStack {
+                Text("Y")
+                    .frame(width: 16)
+                Slider(value: Binding(
+                    get: { layer.transform.y },
+                    set: { newValue in
+                        store.updatePresenterGlobalLayer(id: layer.id) { $0.transform.y = newValue }
+                    }
+                ), in: 0...1)
+            }
+            HStack {
+                Text("Size")
+                    .frame(width: 28)
+                Slider(value: Binding(
+                    get: { layer.transform.scaleX },
+                    set: { newValue in
+                        store.updatePresenterGlobalLayer(id: layer.id) {
+                            $0.transform.scaleX = newValue
+                            $0.transform.scaleY = newValue
+                        }
+                    }
+                ), in: 0.1...3)
+            }
+            HStack {
+                Text("Opacity")
+                    .frame(width: 44)
+                Slider(value: Binding(
+                    get: { layer.opacity },
+                    set: { newValue in
+                        store.updatePresenterGlobalLayer(id: layer.id) { $0.opacity = newValue }
+                    }
+                ), in: 0...1)
+            }
+        }
+        .padding()
+        .background(theme.background.opacity(0.5))
     }
 
     private func cameraPicker(angle: PresenterCameraAngle, label: String) -> some View {
