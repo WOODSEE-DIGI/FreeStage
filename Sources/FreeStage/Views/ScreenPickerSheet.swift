@@ -15,6 +15,7 @@ struct ScreenPickerSheet: View {
     @State private var displays: [ScreenCaptureDisplay] = []
     @State private var isLoading = true
     @State private var usedFallback = false
+    @State private var permissionGranted = ScreenRecordingPermission.isGranted
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -37,10 +38,8 @@ struct ScreenPickerSheet: View {
                     .font(.caption)
                 }
             } else {
-                if usedFallback {
-                    Text("Screen Recording permission may be required before capture begins.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if !permissionGranted || usedFallback {
+                    permissionWarning
                 }
 
                 List(displays) { display in
@@ -63,20 +62,48 @@ struct ScreenPickerSheet: View {
             }
         }
         .padding()
-        .frame(minWidth: 360, minHeight: 260)
+        .frame(minWidth: 380, minHeight: 280)
         .task {
             await discover()
         }
     }
 
+    private var permissionWarning: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Screen Recording permission is not active", systemImage: "exclamationmark.triangle.fill")
+                .font(.callout.bold())
+                .foregroundStyle(.orange)
+            Text("Cueing a display now will create the layer, but it will stay black until FreeStage is granted Screen Recording. If FreeStage already looks enabled in System Settings, remove it with the − button, add it back, then relaunch FreeStage.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Grant Permission…") {
+                    permissionGranted = ScreenRecordingPermission.request()
+                    usedFallback = usedFallback || !permissionGranted
+                }
+                Button("Open Settings…") {
+                    ScreenRecordingPermission.openSettings()
+                }
+            }
+            .font(.caption)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     private func discover() async {
+        permissionGranted = ScreenRecordingPermission.isGranted
         displays = await ScreenCaptureDisplay.discover()
         let screenCaptureKitHasDisplays = await usesScreenCaptureKit()
         usedFallback = !displays.isEmpty && !screenCaptureKitHasDisplays
         isLoading = false
     }
 
-    /// Returns true if SCShareableContent returned displays (permission granted).
+    /// Returns true when ScreenCaptureKit itself could enumerate displays,
+    /// which only happens with an active Screen Recording grant.
     private func usesScreenCaptureKit() async -> Bool {
         do {
             let content = try await SCShareableContent.current
@@ -87,8 +114,6 @@ struct ScreenPickerSheet: View {
     }
 
     private func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenRecording") {
-            NSWorkspace.shared.open(url)
-        }
+        ScreenRecordingPermission.openSettings()
     }
 }

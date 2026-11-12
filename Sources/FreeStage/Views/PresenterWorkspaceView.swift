@@ -196,6 +196,12 @@ struct PresenterWorkspaceView: View {
             ScreenPickerSheet { display in
                 addCueLayer(source: .screen(displayID: display.displayID),
                             name: "Screen \(display.displayID)")
+                // Register this build with TCC before the stream is attempted.
+                // A stale grant (ad-hoc build rebuilt with a new cdhash) fails
+                // silently otherwise: black layer, no error.
+                if !ScreenRecordingPermission.isGranted {
+                    _ = ScreenRecordingPermission.request()
+                }
                 screenCaptureManager?.startCapture(displayID: display.displayID)
             }
         }
@@ -1251,6 +1257,11 @@ struct PresenterWorkspaceView: View {
                     .help("Add a layer that only appears in this cue")
                 }
 
+                if segment.layers.contains(where: { if case .screen = $0.source { return true } else { return false } }),
+                   !ScreenRecordingPermission.isGranted {
+                    screenPermissionWarning
+                }
+
                 if segment.layers.isEmpty {
                     Text("No cue layers yet.")
                         .font(.caption)
@@ -1280,6 +1291,32 @@ struct PresenterWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var screenPermissionWarning: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("No screen signal yet", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.bold())
+                .foregroundStyle(.orange)
+            Text("Screen Recording is not active for this build of FreeStage, so screen layers stay black. If FreeStage already looks enabled in System Settings, remove it with the − button, add it back, then relaunch.")
+                .font(.caption2)
+                .foregroundStyle(theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Grant Permission…") {
+                    _ = ScreenRecordingPermission.request()
+                }
+                Button("Retry Capture") {
+                    updateScreenCapture()
+                }
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private func cueLayerRow(_ layer: Layer, segment: PresenterSegment) -> some View {

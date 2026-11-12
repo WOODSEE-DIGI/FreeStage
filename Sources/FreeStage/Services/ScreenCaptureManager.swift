@@ -61,7 +61,9 @@ final class ScreenCaptureManager: @unchecked Sendable {
         do {
             let content = try await SCShareableContent.current
             guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                Self.logger.warning("Display \(displayID) not found in shareable content")
+                Self.logger.warning(
+                    "Display \(displayID) not found in shareable content (screen recording granted: \(Self.hasScreenRecordingPermission))"
+                )
                 return
             }
 
@@ -73,12 +75,21 @@ final class ScreenCaptureManager: @unchecked Sendable {
             config.pixelFormat = kCVPixelFormatType_32BGRA
             config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
             config.showsCursor = true
-            config.capturesAudio = true
+            // Only ask for audio when something is listening. A denied
+            // microphone permission must never stop the display stream.
+            config.capturesAudio = audioMixer != nil
 
             let stream = SCStream(filter: filter, configuration: config, delegate: nil)
             let delegate = StreamDelegate(manager: self, displayID: displayID)
             try stream.addStreamOutput(delegate, type: SCStreamOutputType.screen, sampleHandlerQueue: captureQueue)
-            try stream.addStreamOutput(delegate, type: SCStreamOutputType.audio, sampleHandlerQueue: captureQueue)
+            if config.capturesAudio {
+                do {
+                    try stream.addStreamOutput(delegate, type: SCStreamOutputType.audio, sampleHandlerQueue: captureQueue)
+                } catch {
+                    // Video capture is still useful without system audio.
+                    Self.logger.error("Screen capture audio unavailable for \(displayID): \(error.localizedDescription)")
+                }
+            }
             try await stream.startCapture()
 
             lock.withLock {
@@ -207,6 +218,33 @@ final class ScreenCaptureManager: @unchecked Sendable {
         lock.withLock { textures[displayID] }
     }
 
+    // MARK: - Screen recording permission
+
+    /// True when *this process* is allowed to capture the screen.
+    ///
+    /// macOS stores Screen Recording grants against the app's code signature.
+    /// Ad-hoc signed development builds change their cdhash on every build, so
+    /// System Settings can list FreeStage as enabled while this returns `false`.
+    /// Call this to detect that stale-grant case and re-register the app.
+    static var hasScreenRecordingPermission: Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Ask macOS to register this app in Screen Recording and prompt the user.
+    ///
+    /// Returns the current grant state. A grant only takes effect for the next
+    /// process launch, so the app still needs relaunching after the user
+    /// approves.
+    @discardableResult
+    static func requestScreenRecordingPermission() -> Bool {
+        ScreenRecordingPermission.request()
+    }
+
+    /// Open System Settings on the Screen Recording pane.
+    static func openScreenRecordingSettings() {
+        ScreenRecordingPermission.openSettings()
+    }
+
     /// Update the desktop-icons exclusion flag and restart active screen streams
     /// so the change takes effect immediately.
     func setExcludeDesktopIcons(_ exclude: Bool) {
@@ -262,6 +300,46 @@ private final class StreamDelegate: NSObject, SCStreamOutput {
 extension Notification.Name {
     static let screenCapturePermissionDenied = Notification.Name("com.woodseedigi.FreeStage.screenCapturePermissionDenied")
 }
+
+// MARK: - Screen recording permission
+
+/// Helpers for the TCC Screen Recording grant, shared by the capture manager
+/// and the settings UI. The grant is per-binary: an ad-hoc signed build loses
+/// it whenever the cdhash changes, which is exactly what a fresh Xcode build
+/// does. `isGranted` is the only reliable way to tell that apart from a real
+/// "user never approved this" state.
+enum ScreenRecordingPermission {
+    static var isGranted: Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Prompt on first use. When the app is already listed (but stale), macOS
+    /// does not re-prompt, so fall back to opening the settings pane.
+    @discardableResult
+    static func request() -> Bool {
+        let granted = CGRequestScreenCaptureAccess()
+        if !granted {
+            openSettings()
+        }
+        return granted
+    }
+
+    static func openSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenRecording") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Guidance shown when the grant is missing or stale.
+    static let guidance = """
+        Screen Recording permission is not active for this build of FreeStage. \
+        If FreeStage already appears enabled in System Settings → Privacy & Security → \
+        Screen & System Audio Recording, remove it with the − button, add it back, \
+        then relaunch FreeStage.
+        """
+}
+
 
 // MARK: - Display discovery
 

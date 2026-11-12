@@ -124,7 +124,7 @@ struct FreeStageApp: App {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("FreeStage needs Screen Recording permission to capture displays. Enable FreeStage in System Settings → Privacy & Security → Screen Recording, then relaunch the app.")
+                    Text(ScreenRecordingPermission.guidance)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .screenCapturePermissionDenied)) { _ in
                     showScreenCapturePermissionAlert = true
