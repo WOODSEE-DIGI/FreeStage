@@ -46,6 +46,9 @@ final class MediaSourceRenderer: @unchecked Sendable {
         var lastFrame: Frame?
         private var loopObserver: NSObjectProtocol?
         private let securityScopedAccessing: Bool
+        /// Desired playback rate. The renderer calls `start()` every frame;
+        /// respecting this lets the UI pause without being overruled.
+        var targetRate: Float = 1
 
         struct Frame {
             let cvTexture: CVMetalTexture
@@ -114,7 +117,9 @@ final class MediaSourceRenderer: @unchecked Sendable {
         }
 
         func start() {
-            player.play()
+            if targetRate > 0 {
+                player.play()
+            }
         }
 
         func currentFrame() -> MTLTexture? {
@@ -158,15 +163,21 @@ final class MediaSourceRenderer: @unchecked Sendable {
     // MARK: - Playback control
 
     func play(source: Source) {
-        session(for: source)?.start()
+        guard let session = session(for: source) else { return }
+        session.targetRate = 1
+        session.player.play()
     }
 
     func pause(source: Source) {
-        session(for: source)?.player.pause()
+        guard let session = session(for: source) else { return }
+        session.targetRate = 0
+        session.player.pause()
     }
 
     func setPlaybackRate(_ rate: Float, for source: Source) {
-        session(for: source)?.player.rate = rate
+        guard let session = session(for: source) else { return }
+        session.targetRate = rate
+        session.player.rate = rate
     }
 
     func seek(to time: TimeInterval, for source: Source) {
@@ -178,6 +189,7 @@ final class MediaSourceRenderer: @unchecked Sendable {
 
     func restart(source: Source) {
         guard let session = session(for: source) else { return }
+        session.targetRate = 1
         let start = CMTime(seconds: session.inPoint, preferredTimescale: 600)
         session.player.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
             session.player.play()
