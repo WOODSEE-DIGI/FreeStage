@@ -27,6 +27,8 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
+    @State private var leftColumnWidth: CGFloat = 420
+    @State private var rightColumnWidth: CGFloat = 280
     private let iconStripWidth: CGFloat = 44
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
@@ -66,18 +68,37 @@ struct PresenterWorkspaceView: View {
                 headerBar
                     .padding(.horizontal)
 
-                HStack(spacing: 16) {
-                    leftPanel
-                        .frame(width: isSegmentEditorExpanded ? 420 : 260)
+                GeometryReader { geometry in
+                    let totalWidth = geometry.size.width
+                    let leftWidth = isSegmentEditorExpanded ? max(360, leftColumnWidth) : 260
+                    let rightWidth = max(220, rightColumnWidth)
+                    let centerWidth = max(300, totalWidth - leftWidth - rightWidth - 28)
 
-                    VStack(spacing: 12) {
-                        liveMonitor
-                        previewMonitor
+                    HStack(spacing: 0) {
+                        leftPanel
+                            .frame(width: leftWidth)
+
+                        DragDivider { delta in
+                            let newLeft = leftColumnWidth + delta
+                            leftColumnWidth = min(max(newLeft, 360), 600)
+                        }
+                        .frame(width: 14)
+
+                        VStack(spacing: 12) {
+                            liveMonitor
+                            previewMonitor
+                        }
+                        .frame(width: centerWidth)
+
+                        DragDivider { delta in
+                            let newRight = rightColumnWidth - delta
+                            rightColumnWidth = min(max(newRight, 220), 450)
+                        }
+                        .frame(width: 14)
+
+                        placeholderPanel
+                            .frame(width: rightWidth)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    placeholderPanel
-                        .frame(width: 280)
                 }
                 .padding(.horizontal)
 
