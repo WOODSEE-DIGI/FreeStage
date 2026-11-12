@@ -68,7 +68,7 @@ struct PresenterWorkspaceView: View {
 
                 HSplitView {
                     leftPanel
-                        .frame(minWidth: 280, idealWidth: 380, maxWidth: 600)
+                        .frame(minWidth: 360, idealWidth: 420, maxWidth: 600)
 
                     VStack(spacing: 12) {
                         liveMonitor
@@ -77,7 +77,7 @@ struct PresenterWorkspaceView: View {
                     .frame(minWidth: 400, idealWidth: 700, maxWidth: .infinity)
 
                     placeholderPanel
-                        .frame(minWidth: 240, idealWidth: 280, maxWidth: 450)
+                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 450)
                 }
                 .padding(.horizontal)
 
@@ -400,11 +400,9 @@ struct PresenterWorkspaceView: View {
 
             Divider()
 
-            ScrollView {
-                segmentEditorBody(segment)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            }
+            segmentEditorBody(segment)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding()
         }
     }
 
