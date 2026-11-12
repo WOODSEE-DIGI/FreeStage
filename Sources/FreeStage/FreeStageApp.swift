@@ -33,6 +33,7 @@ struct FreeStageApp: App {
     @State private var facePuppetTrackingService: FacePuppetTrackingService
     @StateObject private var virtualCamera: VirtualCameraOutputService
     @State private var themeStore: ThemeStore
+    @State private var showProjectManager = true
     @State private var showScreenCapturePermissionAlert = false
 
     init() {
@@ -90,22 +91,28 @@ struct FreeStageApp: App {
 
     var body: some SwiftUI.Scene {
         WindowGroup("FreeStage") {
-            ContentView()
-                .environment(store)
-                .environment(themeStore)
-                .environment(\.cameraCaptureManager, captureManager)
-                .environment(\.screenCaptureManager, screenCaptureManager)
-                .environment(\.audioMixer, audioMixer)
-                .environment(\.recordingService, recordingService)
-                .environment(\.cameraControlService, cameraControlService)
-                .environment(\.goStreamController, goStreamController)
-                .environment(\.virtualCameraOutputService, virtualCamera)
-                .environment(\.appSettings, appSettings)
-                .environment(\.cueTriggerServer, cueTriggerServer)
-                .environment(\.oscCueServer, oscCueServer)
-                .environment(\.streamingService, streamingService)
-                .environment(\.facePuppetTrackingService, facePuppetTrackingService)
-                .alert("Screen Recording Permission Required", isPresented: $showScreenCapturePermissionAlert) {
+            Group {
+                if showProjectManager {
+                    ProjectManagerView(isPresented: $showProjectManager)
+                } else {
+                    ContentView()
+                }
+            }
+            .environment(store)
+            .environment(themeStore)
+            .environment(\.cameraCaptureManager, captureManager)
+            .environment(\.screenCaptureManager, screenCaptureManager)
+            .environment(\.audioMixer, audioMixer)
+            .environment(\.recordingService, recordingService)
+            .environment(\.cameraControlService, cameraControlService)
+            .environment(\.goStreamController, goStreamController)
+            .environment(\.virtualCameraOutputService, virtualCamera)
+            .environment(\.appSettings, appSettings)
+            .environment(\.cueTriggerServer, cueTriggerServer)
+            .environment(\.oscCueServer, oscCueServer)
+            .environment(\.streamingService, streamingService)
+            .environment(\.facePuppetTrackingService, facePuppetTrackingService)
+            .alert("Screen Recording Permission Required", isPresented: $showScreenCapturePermissionAlert) {
                     Button("Open Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenRecording") {
                             NSWorkspace.shared.open(url)
@@ -238,6 +245,7 @@ struct FreeStageApp: App {
 
                 let savedShow = try ShowPackage.write(showToSave, to: url)
                 store.show = savedShow
+                appSettings.addRecentShow(url: url)
                 appLogger.info("Saved show package to \(url.path)")
             } catch {
                 appLogger.error("Failed to save show: \(error.localizedDescription)")
@@ -256,6 +264,7 @@ struct FreeStageApp: App {
                 let show = try ShowPackage.read(from: url)
                 DispatchQueue.main.async {
                     store.load(show: show)
+                    appSettings.addRecentShow(url: url)
                     appLogger.info("Opened show package from \(url.path)")
                 }
             } catch {

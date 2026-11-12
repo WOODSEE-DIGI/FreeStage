@@ -35,6 +35,7 @@ final class AppSettings: @unchecked Sendable {
         case showStyles
         case selectedShowStyleID
         case appThemeID
+        case recentShows
     }
 
     /// Recording container format + codec.
@@ -307,6 +308,39 @@ final class AppSettings: @unchecked Sendable {
     var appThemeID: String? {
         get { defaults.string(forKey: Key.appThemeID.rawValue) }
         set { defaults.set(newValue, forKey: Key.appThemeID.rawValue) }
+    }
+
+    // MARK: - Recent shows
+
+    /// Recently opened FreeStage show packages for the project manager.
+    var recentShows: [RecentShow] {
+        get {
+            guard let data = defaults.data(forKey: Key.recentShows.rawValue),
+                  let decoded = try? JSONDecoder().decode([RecentShow].self, from: data) else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.recentShows.rawValue)
+            }
+        }
+    }
+
+    /// Add or move a show to the front of the recent-shows list, keeping a
+    /// security-scoped bookmark so sandboxed access survives relaunches.
+    func addRecentShow(url: URL) {
+        let bookmark = SecurityScopedBookmark.create(for: url)
+        let entry = RecentShow(url: url, bookmarkData: bookmark)
+        var recents = recentShows.filter { $0.id != entry.id }
+        recents.insert(entry, at: 0)
+        recentShows = Array(recents.prefix(20))
+    }
+
+    /// Remove a recent-show entry.
+    func removeRecentShow(id: String) {
+        recentShows = recentShows.filter { $0.id != id }
     }
 }
 
