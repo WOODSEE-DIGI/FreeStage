@@ -27,10 +27,10 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    @State private var leftColumnWidth: CGFloat = 420
-    @State private var rightColumnWidth: CGFloat = 280
+    @State private var leftColumnWidth: CGFloat = 520
+    @State private var rightColumnWidth: CGFloat = 320
     private let iconStripWidth: CGFloat = 44
-    private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+    private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
         Binding(
@@ -70,9 +70,9 @@ struct PresenterWorkspaceView: View {
 
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
-                    let leftWidth = isSegmentEditorExpanded ? max(360, leftColumnWidth) : 260
-                    let rightWidth = max(220, rightColumnWidth)
-                    let centerWidth = max(300, totalWidth - leftWidth - rightWidth - 28)
+                    let leftWidth = isSegmentEditorExpanded ? max(420, leftColumnWidth) : 260
+                    let rightWidth = max(260, rightColumnWidth)
+                    let centerWidth = max(400, totalWidth - leftWidth - rightWidth - 28)
 
                     HStack(spacing: 0) {
                         leftPanel
@@ -107,8 +107,8 @@ struct PresenterWorkspaceView: View {
                     .padding(.bottom)
             }
             .padding(.vertical, 8)
-            .frame(minWidth: 1500, minHeight: 900)
-            .background(WindowFrameInitializer(minSize: NSSize(width: 1500, height: 900)))
+            .frame(minWidth: 1700, minHeight: 1000)
+            .background(WindowFrameInitializer(minSize: NSSize(width: 1700, height: 1000)))
         }
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture()
@@ -406,9 +406,7 @@ struct PresenterWorkspaceView: View {
                     .foregroundStyle(theme.text)
                 Spacer()
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isSegmentEditorExpanded = false
-                    }
+                    isSegmentEditorExpanded = false
                 } label: {
                     Image(systemName: "xmark")
                         .foregroundStyle(theme.text)
@@ -751,10 +749,8 @@ struct PresenterWorkspaceView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                store.selectSegment(id: segment.id)
-                isSegmentEditorExpanded = true
-            }
+            store.selectSegment(id: segment.id)
+            isSegmentEditorExpanded = true
         }
         .contextMenu {
             Button("Duplicate") {

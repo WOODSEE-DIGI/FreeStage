@@ -98,6 +98,7 @@ struct StageMonitorView: View {
             Text("\(fpsCounter.fps, specifier: "%.0f") fps")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(fpsCounter.fps < 20 ? .red : theme.secondaryText)
+                .frame(minWidth: 46, alignment: .trailing)
 
             if isLive {
                 Text("LIVE")
