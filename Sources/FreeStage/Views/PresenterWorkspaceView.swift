@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
@@ -100,6 +101,13 @@ struct PresenterWorkspaceView: View {
                     }
                 }
                 .listStyle(.plain)
+
+                if let segment = store.activeSegment {
+                    Divider()
+                        .padding(.horizontal)
+                    segmentEditor(segment)
+                        .padding()
+                }
             } else {
                 ContentUnavailableView("No Segments", systemImage: "list.bullet.rectangle")
                     .foregroundStyle(theme.secondaryText)
@@ -107,6 +115,157 @@ struct PresenterWorkspaceView: View {
         }
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Segment editor
+
+    private func segmentEditor(_ segment: PresenterSegment) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Selected Segment")
+                .font(.subheadline.bold())
+                .foregroundStyle(theme.text)
+
+            TextField("Name", text: nameBinding(for: segment))
+                .textFieldStyle(.roundedBorder)
+
+            Picker("Type", selection: typeBinding(for: segment)) {
+                ForEach(PresenterSegmentType.allCases) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if segment.type == .cameraGraphic {
+                Picker("Camera", selection: cameraAngleBinding(for: segment)) {
+                    ForEach(PresenterCameraAngle.allCases) { angle in
+                        Text(angle.displayName).tag(angle)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            if segment.type == .cameraGraphic || segment.type == .titleCard {
+                placeholderPicker(for: segment)
+            }
+
+            if segment.type == .videoPackage {
+                videoFileSection(for: segment)
+            }
+
+            Toggle("Auto-follow to next segment", isOn: autoFollowBinding(for: segment))
+                .foregroundStyle(theme.text)
+
+            TextField("Notes", text: notesBinding(for: segment))
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private func placeholderPicker(for segment: PresenterSegment) -> some View {
+        let binding = Binding<UUID?>(
+            get: { segment.placeholderID },
+            set: { newID in
+                store.updatePresenterSegment(id: segment.id) { $0.placeholderID = newID }
+            }
+        )
+
+        return Picker("Placeholder", selection: binding) {
+            Text("None").tag(UUID?.none)
+            if let placeholders = store.presenterRundown?.placeholders {
+                ForEach(placeholders) { placeholder in
+                    Text(placeholder.name).tag(UUID?.some(placeholder.id))
+                }
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    private func videoFileSection(for segment: PresenterSegment) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Video")
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button("Choose…") {
+                    pickVideoForSegment(segment)
+                }
+            }
+            if let url = segment.mediaURL {
+                Text(url.lastPathComponent)
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(1)
+            } else {
+                Text("No video selected")
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+            }
+        }
+    }
+
+    private func pickVideoForSegment(_ segment: PresenterSegment) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie]
+        panel.allowsMultipleSelection = false
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            store.updatePresenterSegment(id: segment.id) { $0.mediaURL = url }
+            loadDuration(for: segment.id, url: url)
+        }
+    }
+
+    private func loadDuration(for segmentID: UUID, url: URL) {
+        Task {
+            let asset = AVURLAsset(url: url)
+            let duration = try? await asset.load(.duration).seconds
+            await MainActor.run {
+                store.updatePresenterSegment(id: segmentID) { $0.duration = duration }
+            }
+        }
+    }
+
+    private func nameBinding(for segment: PresenterSegment) -> Binding<String> {
+        Binding(
+            get: { segment.name },
+            set: { newName in
+                store.updatePresenterSegment(id: segment.id) { $0.name = newName }
+            }
+        )
+    }
+
+    private func typeBinding(for segment: PresenterSegment) -> Binding<PresenterSegmentType> {
+        Binding(
+            get: { segment.type },
+            set: { newType in
+                store.updatePresenterSegment(id: segment.id) { $0.type = newType }
+            }
+        )
+    }
+
+    private func cameraAngleBinding(for segment: PresenterSegment) -> Binding<PresenterCameraAngle> {
+        Binding(
+            get: { segment.cameraAngle },
+            set: { newAngle in
+                store.updatePresenterSegment(id: segment.id) { $0.cameraAngle = newAngle }
+            }
+        )
+    }
+
+    private func autoFollowBinding(for segment: PresenterSegment) -> Binding<Bool> {
+        Binding(
+            get: { segment.autoFollow },
+            set: { newValue in
+                store.updatePresenterSegment(id: segment.id) { $0.autoFollow = newValue }
+            }
+        )
+    }
+
+    private func notesBinding(for segment: PresenterSegment) -> Binding<String> {
+        Binding(
+            get: { segment.notes },
+            set: { newValue in
+                store.updatePresenterSegment(id: segment.id) { $0.notes = newValue }
+            }
+        )
     }
 
     private func segmentRow(_ segment: PresenterSegment) -> some View {

@@ -59,6 +59,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
     var placeholderID: UUID?
     /// For videoPackage segments: the video file URL.
     var mediaURL: URL?
+    /// Cached duration of the selected video, in seconds.
+    var duration: TimeInterval?
     /// For cameraGraphic segments: which camera angle to use.
     var cameraAngle: PresenterCameraAngle
     /// If true, automatically advance to the next segment when this one ends.
@@ -72,6 +74,7 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         type: PresenterSegmentType = .cameraGraphic,
         placeholderID: UUID? = nil,
         mediaURL: URL? = nil,
+        duration: TimeInterval? = nil,
         cameraAngle: PresenterCameraAngle = .primary,
         autoFollow: Bool = false,
         notes: String = ""
@@ -81,6 +84,7 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         self.type = type
         self.placeholderID = placeholderID
         self.mediaURL = mediaURL
+        self.duration = duration
         self.cameraAngle = cameraAngle
         self.autoFollow = autoFollow
         self.notes = notes

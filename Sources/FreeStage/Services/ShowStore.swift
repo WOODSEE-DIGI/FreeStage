@@ -22,8 +22,11 @@ final class ShowStore: NSObject {
     // MARK: - Presenter mode state
 
     var activeSegmentID: UUID?
-    var liveSegmentID: UUID?
+    var liveSegmentID: UUID? {
+        didSet { scheduleAutoFollowIfNeeded() }
+    }
     var selectedPlaceholderID: UUID?
+    private var presenterAutoFollowTimer: Timer?
 
     // MARK: - Workspace UI state
 
@@ -1020,6 +1023,21 @@ final class ShowStore: NSObject {
     }
 
     // MARK: - Presenter mode
+
+    private func scheduleAutoFollowIfNeeded() {
+        presenterAutoFollowTimer?.invalidate()
+        presenterAutoFollowTimer = nil
+        guard show.kind == .presenter,
+              let segment = liveSegment,
+              segment.autoFollow,
+              segment.type == .videoPackage,
+              let duration = segment.duration, duration > 0 else { return }
+        presenterAutoFollowTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.presenterGo()
+            }
+        }
+    }
 
     var presenterRundown: PresenterRundown? {
         show.presenterRundown
