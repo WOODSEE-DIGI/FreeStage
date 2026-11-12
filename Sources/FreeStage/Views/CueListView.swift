@@ -18,16 +18,23 @@ struct CueListView: View {
 
         Table(of: Cue.self, selection: $store.activeCueID) {
             TableColumn("") { cue in
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    Rectangle()
+                        .fill(cue.color?.swiftUIColor ?? .clear)
+                        .frame(width: 4)
+                        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+
                     statusIcon(for: cue)
+
                     if cue.id == store.activeCueID {
                         Image(systemName: "play.fill")
                             .foregroundStyle(.green)
                             .font(.caption)
                     }
                 }
+                .cellBackground(cue.color?.swiftUIColor)
             }
-            .width(48)
+            .width(56)
 
             TableColumn("Number") { cue in
                 Text(cue.number)
@@ -78,24 +85,34 @@ struct CueListView: View {
             .width(60)
 
             TableColumn("") { cue in
-                if cue.continueMode != .none {
-                    Image(systemName: cue.continueMode.systemImage)
-                        .foregroundStyle(theme.secondaryText)
+                HStack {
+                    Spacer()
+                    if cue.continueMode != .none {
+                        Image(systemName: cue.continueMode.systemImage)
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                    Spacer()
                 }
+                .cellBackground(cue.color?.swiftUIColor)
             }
             .width(40)
 
             TableColumn("") { cue in
-                Button {
-                    store.triggerCue(id: cue.id)
-                } label: {
-                    Image(systemName: "play.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
+                HStack {
+                    Spacer()
+                    Button {
+                        store.triggerCue(id: cue.id)
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Fire cue directly")
+                    .disabled(!cue.isArmed)
+                    Spacer()
                 }
-                .buttonStyle(.borderless)
-                .help("Fire cue directly")
-                .disabled(!cue.isArmed)
+                .cellBackground(cue.color?.swiftUIColor)
             }
             .width(32)
         } rows: {
@@ -179,6 +196,7 @@ private extension View {
     func cellBackground(_ color: Color?) -> some View {
         self
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(color?.opacity(0.15) ?? Color.clear)
+            .background(color?.opacity(0.28) ?? Color.clear)
+            .contentShape(Rectangle())
     }
 }
