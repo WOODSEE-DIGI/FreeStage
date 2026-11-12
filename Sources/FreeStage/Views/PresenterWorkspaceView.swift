@@ -27,8 +27,8 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    @State private var leftColumnWidth: CGFloat = 520
-    @State private var rightColumnWidth: CGFloat = 320
+    @State private var leftColumnWidth: CGFloat = 380
+    @State private var rightColumnWidth: CGFloat = 240
     private let iconStripWidth: CGFloat = 44
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
@@ -70,9 +70,9 @@ struct PresenterWorkspaceView: View {
 
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
-                    let leftWidth = isSegmentEditorExpanded ? max(420, leftColumnWidth) : 260
-                    let rightWidth = max(260, rightColumnWidth)
-                    let centerWidth = max(400, totalWidth - leftWidth - rightWidth - 28)
+                    let leftWidth = isSegmentEditorExpanded ? max(340, leftColumnWidth) : 220
+                    let rightWidth = max(200, rightColumnWidth)
+                    let centerWidth = max(240, totalWidth - leftWidth - rightWidth - 28)
 
                     HStack(spacing: 0) {
                         leftPanel
@@ -107,8 +107,8 @@ struct PresenterWorkspaceView: View {
                     .padding(.bottom)
             }
             .padding(.vertical, 8)
-            .frame(minWidth: 1700, minHeight: 1000)
-            .background(WindowFrameInitializer(minSize: NSSize(width: 1700, height: 1000)))
+            .frame(minWidth: 1200, minHeight: 800)
+            .background(WindowFrameInitializer(minSize: NSSize(width: 1200, height: 800)))
         }
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture()
