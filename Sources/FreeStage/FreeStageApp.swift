@@ -94,6 +94,8 @@ struct FreeStageApp: App {
             Group {
                 if showProjectManager {
                     ProjectManagerView(isPresented: $showProjectManager)
+                } else if store.show.kind == .presenter {
+                    PresenterWorkspaceView()
                 } else {
                     ContentView()
                 }
@@ -234,8 +236,11 @@ struct FreeStageApp: App {
                 showToSave.workspace = WorkspaceState(
                     activeCueID: store.activeCueID,
                     liveCueID: store.liveCueID,
+                    activeSegmentID: store.activeSegmentID,
+                    liveSegmentID: store.liveSegmentID,
                     selectedLayerID: store.selectedLayerID,
                     selectedSceneID: store.selectedSceneID,
+                    selectedPlaceholderID: store.selectedPlaceholderID,
                     isEditMode: store.isEditMode,
                     mastheadVisible: store.mastheadVisible,
                     sidebarVisible: store.sidebarVisible,

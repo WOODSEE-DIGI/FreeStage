@@ -69,19 +69,28 @@ struct ProjectManagerView: View {
     private var actionCards: some View {
         HStack(spacing: 16) {
             ActionCard(
-                title: "New Show",
-                subtitle: "Start a blank show with the default workspace.",
-                icon: "plus.square",
+                title: "New Theatre Show",
+                subtitle: ShowKind.theatre.subtitle,
+                icon: "theatermasks",
                 color: theme.accent
             ) {
-                createNewShow()
+                createNewShow(kind: .theatre)
+            }
+
+            ActionCard(
+                title: "New Presenter Show",
+                subtitle: ShowKind.presenter.subtitle,
+                icon: "video.bubble.left",
+                color: theme.selected
+            ) {
+                createNewShow(kind: .presenter)
             }
 
             ActionCard(
                 title: "Open Show…",
                 subtitle: "Browse for a saved .fst show package.",
                 icon: "folder",
-                color: theme.selected
+                color: theme.secondaryText
             ) {
                 openShowFromPanel()
             }
@@ -116,9 +125,15 @@ struct ProjectManagerView: View {
 
     // MARK: - Actions
 
-    private func createNewShow() {
-        store.show = .default(style: settings.defaultShowStyle)
-        store.resetWorkspace()
+    private func createNewShow(kind: ShowKind) {
+        switch kind {
+        case .theatre:
+            store.show = .theatreDefault(style: settings.defaultShowStyle)
+            store.resetWorkspace()
+        case .presenter:
+            store.show = .presenterDefault(style: settings.defaultShowStyle)
+            store.resetWorkspace()
+        }
         isPresented = false
     }
 

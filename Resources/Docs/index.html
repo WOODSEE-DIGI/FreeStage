@@ -17,6 +17,7 @@
     <nav>
         <ul>
             <li><a href="#project-manager">Project Manager</a></li>
+            <li><a href="#show-kinds">Show Kinds</a></li>
             <li><a href="#workspace">Workspace</a></li>
             <li><a href="#modes">Edit & Show</a></li>
             <li><a href="#scenes">Scenes</a></li>
@@ -41,11 +42,30 @@
             <h2>Project Manager</h2>
             <p>When FreeStage launches it shows the <strong>Project Manager</strong> dashboard. This is where you choose what to work on, just like DaVinci Resolve's project manager.</p>
             <ul>
-                <li><strong>New Show</strong> — create a blank show using the current default Show Style.</li>
+                <li><strong>New Theatre Show</strong> — cue list, scenes, and layers for live shows, comedy, theatre, and projector-based events.</li>
+                <li><strong>New Presenter Show</strong> — segment rundown for person-to-camera work such as news, vlogs, and evidence presentations.</li>
                 <li><strong>Open Show…</strong> — browse for any saved <code>.fst</code> show package.</li>
                 <li><strong>Recent Shows</strong> — pick from the last 20 shows you opened or saved. FreeStage keeps a security-scoped bookmark for each one so sandboxed file access survives relaunches.</li>
             </ul>
-            <p>Hover over a recent show and right-click to remove it from the list. Selecting a show opens the main FreeStage workspace.</p>
+            <p>Hover over a recent show and right-click to remove it from the list. Selecting a show opens the correct workspace for that show's kind.</p>
+        </section>
+
+        <section id="show-kinds">
+            <h2>Show Kinds</h2>
+            <p>FreeStage supports two show systems. The underlying render engine is shared, but the UI and document model are tailored to each workflow.</p>
+
+            <h3>Theatre / Projector</h3>
+            <p>The original FreeStage workspace: a cue list of scenes, each containing layers. Best for live events where every cue can change the entire canvas.</p>
+
+            <h3>Presenter to Camera</h3>
+            <p>A streamlined workspace built around a linear <strong>segment rundown</strong>:</p>
+            <ul>
+                <li><strong>Camera + Graphic</strong> — presenter camera with a named placeholder overlay (lower third, story graphic, etc.).</li>
+                <li><strong>Video Package</strong> — a pre-prepared video file that can auto-advance to the next segment when it ends.</li>
+                <li><strong>Title Card</strong> — a full-screen placeholder such as an opening or closing title.</li>
+                <li><strong>Break</strong> — black/holding screen.</li>
+            </ul>
+            <p>Segments reference <strong>placeholders</strong> by name, so the same rundown can be reused with different graphics. Each placeholder can hold an image, text, lower third, or other source. Primary and secondary camera angles are configured once per show.</p>
         </section>
 
         <section id="workspace">

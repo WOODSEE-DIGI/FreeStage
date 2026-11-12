@@ -11,8 +11,12 @@ import Foundation
 struct Show: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     var name: String
+    /// Which show system this document uses.
+    var kind: ShowKind
     var scenes: [Scene]
     var cues: [Cue]
+    /// Presenter-mode data. Used when `kind == .presenter`.
+    var presenterRundown: PresenterRundown?
     /// Layers that are rendered over every scene (e.g. a persistent camera overlay).
     var globalLayers: [Layer]
     /// Named camera setting presets that can be recalled by cues.
@@ -30,8 +34,10 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
     init(
         id: UUID = UUID(),
         name: String = "Untitled Show",
+        kind: ShowKind = .theatre,
         scenes: [Scene] = [],
         cues: [Cue] = [],
+        presenterRundown: PresenterRundown? = nil,
         globalLayers: [Layer] = [],
         cameraPresets: [CameraPreset] = [],
         cameraLimitZones: [String: CameraLimitZone] = [:],
@@ -41,8 +47,10 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
     ) {
         self.id = id
         self.name = name
+        self.kind = kind
         self.scenes = scenes
         self.cues = cues
+        self.presenterRundown = presenterRundown
         self.globalLayers = globalLayers
         self.cameraPresets = cameraPresets
         self.cameraLimitZones = cameraLimitZones
@@ -54,16 +62,19 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
     // MARK: - Codable (back-compat with shows saved before limit zones/bookmarks/workspace/style)
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, scenes, cues, globalLayers, cameraPresets, cameraLimitZones, bookmarks, workspace, style
+        case id, name, kind, scenes, cues, presenterRundown
+        case globalLayers, cameraPresets, cameraLimitZones, bookmarks, workspace, style
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
-        scenes = try container.decode([Scene].self, forKey: .scenes)
-        cues = try container.decode([Cue].self, forKey: .cues)
-        globalLayers = try container.decode([Layer].self, forKey: .globalLayers)
+        kind = try container.decodeIfPresent(ShowKind.self, forKey: .kind) ?? .theatre
+        scenes = try container.decodeIfPresent([Scene].self, forKey: .scenes) ?? []
+        cues = try container.decodeIfPresent([Cue].self, forKey: .cues) ?? []
+        presenterRundown = try container.decodeIfPresent(PresenterRundown.self, forKey: .presenterRundown)
+        globalLayers = try container.decodeIfPresent([Layer].self, forKey: .globalLayers) ?? []
         cameraPresets = try container.decodeIfPresent([CameraPreset].self, forKey: .cameraPresets) ?? []
         cameraLimitZones = try container.decodeIfPresent([String: CameraLimitZone].self, forKey: .cameraLimitZones) ?? [:]
         bookmarks = try container.decodeIfPresent([String: Data].self, forKey: .bookmarks) ?? [:]
@@ -99,8 +110,8 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         return copy
     }
 
-    /// Create a minimal show with a demo scene containing two color layers.
-    static func `default`(style: ShowStyle = .default) -> Show {
+    /// Create a minimal theatre show with a demo scene containing two color layers.
+    static func theatreDefault(style: ShowStyle = .default) -> Show {
         let backgroundLayer = Layer(
             name: "Background",
             source: .color(CGColorComponents(r: 0.1, g: 0.1, b: 0.3, a: 1)),
@@ -125,12 +136,31 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         )
         return Show(
             name: "Untitled Show",
+            kind: .theatre,
             scenes: [scene],
             cues: [cue],
             globalLayers: [],
             cameraPresets: [],
             style: style
         )
+    }
+
+    /// Create a minimal presenter-to-camera show with a default segment rundown.
+    static func presenterDefault(style: ShowStyle = .default) -> Show {
+        return Show(
+            name: "Untitled Presenter Show",
+            kind: .presenter,
+            presenterRundown: .default(),
+            globalLayers: [],
+            cameraPresets: [],
+            style: style
+        )
+    }
+
+    /// Backward-compatible default factory. New code should use `theatreDefault`
+    /// or `presenterDefault` explicitly.
+    static func `default`(style: ShowStyle = .default) -> Show {
+        theatreDefault(style: style)
     }
 
     func scene(withID id: UUID) -> Scene? {

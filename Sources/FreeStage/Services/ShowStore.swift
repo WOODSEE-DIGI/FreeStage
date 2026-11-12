@@ -19,6 +19,12 @@ final class ShowStore: NSObject {
     var selectedSceneID: UUID?
     var isPlaying = false
 
+    // MARK: - Presenter mode state
+
+    var activeSegmentID: UUID?
+    var liveSegmentID: UUID?
+    var selectedPlaceholderID: UUID?
+
     // MARK: - Workspace UI state
 
     var isEditMode = true
@@ -32,8 +38,11 @@ final class ShowStore: NSObject {
         let workspace = show.workspace
         self.activeCueID = workspace.activeCueID ?? show.cues.first?.id
         self.liveCueID = workspace.liveCueID ?? show.cues.first?.id
+        self.activeSegmentID = workspace.activeSegmentID ?? show.presenterRundown?.segments.first?.id
+        self.liveSegmentID = workspace.liveSegmentID ?? show.presenterRundown?.segments.first?.id
         self.selectedLayerID = workspace.selectedLayerID
         self.selectedSceneID = workspace.selectedSceneID
+        self.selectedPlaceholderID = workspace.selectedPlaceholderID
         self.isEditMode = workspace.isEditMode
         self.mastheadVisible = workspace.mastheadVisible
         self.sidebarVisible = workspace.sidebarVisible
@@ -167,8 +176,11 @@ final class ShowStore: NSObject {
         let workspace = show.workspace
         activeCueID = workspace.activeCueID ?? show.cues.first?.id
         liveCueID = workspace.liveCueID ?? show.cues.first?.id
+        activeSegmentID = workspace.activeSegmentID ?? show.presenterRundown?.segments.first?.id
+        liveSegmentID = workspace.liveSegmentID ?? show.presenterRundown?.segments.first?.id
         selectedLayerID = workspace.selectedLayerID
         selectedSceneID = workspace.selectedSceneID
+        selectedPlaceholderID = workspace.selectedPlaceholderID
         isEditMode = workspace.isEditMode
         mastheadVisible = workspace.mastheadVisible
         sidebarVisible = workspace.sidebarVisible
@@ -182,8 +194,12 @@ final class ShowStore: NSObject {
         let firstCueID = show.cues.first?.id
         activeCueID = firstCueID
         liveCueID = firstCueID
+        let firstSegmentID = show.presenterRundown?.segments.first?.id
+        activeSegmentID = firstSegmentID
+        liveSegmentID = firstSegmentID
         selectedLayerID = nil
         selectedSceneID = nil
+        selectedPlaceholderID = nil
         isPlaying = false
     }
 
@@ -1001,5 +1017,267 @@ final class ShowStore: NSObject {
                 layer.filters.append(.colorCorrection(filter))
             }
         }
+    }
+
+    // MARK: - Presenter mode
+
+    var presenterRundown: PresenterRundown? {
+        show.presenterRundown
+    }
+
+    var activeSegment: PresenterSegment? {
+        guard let activeSegmentID,
+              let rundown = show.presenterRundown else { return nil }
+        return rundown.segments.first { $0.id == activeSegmentID }
+    }
+
+    var liveSegment: PresenterSegment? {
+        guard let liveSegmentID,
+              let rundown = show.presenterRundown else { return nil }
+        return rundown.segments.first { $0.id == liveSegmentID }
+    }
+
+    /// The scene that represents the live presenter segment, if any.
+    var presenterLiveScene: Scene? {
+        guard let segment = liveSegment else { return nil }
+        return scene(for: segment)
+    }
+
+    /// The scene that represents the active (preview) presenter segment, if any.
+    var presenterActiveScene: Scene? {
+        guard let segment = activeSegment else { return nil }
+        return scene(for: segment)
+    }
+
+    func selectSegment(id: UUID?) {
+        activeSegmentID = id
+        selectedPlaceholderID = nil
+    }
+
+    @discardableResult
+    func presenterGo() -> GoResult {
+        guard let activeSegmentID,
+              let rundown = show.presenterRundown,
+              rundown.segments.contains(where: { $0.id == activeSegmentID }) else {
+            return .noCue
+        }
+        stopCameraMove()
+        liveSegmentID = activeSegmentID
+
+        guard let index = rundown.segments.firstIndex(where: { $0.id == activeSegmentID }),
+              index + 1 < rundown.segments.count else {
+            return .atEnd
+        }
+        self.activeSegmentID = rundown.segments[index + 1].id
+        let nextSegment = activeSegment
+        return .advanced(nextCue: nextSegment.map { Cue(name: $0.name, sceneID: UUID()) })
+    }
+
+    func triggerSegment(id: UUID) {
+        guard let rundown = show.presenterRundown,
+              rundown.segments.contains(where: { $0.id == id }) else { return }
+        stopCameraMove()
+        activeSegmentID = id
+        liveSegmentID = id
+    }
+
+    func selectPreviousSegment() {
+        guard let activeSegmentID,
+              let rundown = show.presenterRundown,
+              let index = rundown.segments.firstIndex(where: { $0.id == activeSegmentID }),
+              index > 0 else { return }
+        self.activeSegmentID = rundown.segments[index - 1].id
+    }
+
+    func selectNextSegment() {
+        guard let activeSegmentID,
+              let rundown = show.presenterRundown,
+              let index = rundown.segments.firstIndex(where: { $0.id == activeSegmentID }),
+              index + 1 < rundown.segments.count else { return }
+        self.activeSegmentID = rundown.segments[index + 1].id
+    }
+
+    // MARK: - Presenter segment mutation
+
+    @discardableResult
+    func addPresenterSegment(type: PresenterSegmentType = .cameraGraphic, after id: UUID? = nil) -> UUID {
+        guard var rundown = show.presenterRundown else { return UUID() }
+        let segment = PresenterSegment(name: "New \(type.displayName)", type: type)
+        if let id,
+           let index = rundown.segments.firstIndex(where: { $0.id == id }) {
+            rundown.segments.insert(segment, at: index + 1)
+        } else {
+            rundown.segments.append(segment)
+        }
+        show.presenterRundown = rundown
+        activeSegmentID = segment.id
+        return segment.id
+    }
+
+    func duplicatePresenterSegment(id: UUID) {
+        guard var rundown = show.presenterRundown,
+              let segment = rundown.segments.first(where: { $0.id == id }),
+              let index = rundown.segments.firstIndex(where: { $0.id == id }) else { return }
+        let copy = PresenterSegment(
+            name: segment.name + " Copy",
+            type: segment.type,
+            placeholderID: segment.placeholderID,
+            mediaURL: segment.mediaURL,
+            cameraAngle: segment.cameraAngle,
+            autoFollow: segment.autoFollow,
+            notes: segment.notes
+        )
+        rundown.segments.insert(copy, at: index + 1)
+        show.presenterRundown = rundown
+    }
+
+    func deletePresenterSegment(id: UUID) {
+        guard var rundown = show.presenterRundown else { return }
+        rundown.segments.removeAll { $0.id == id }
+        show.presenterRundown = rundown
+        if activeSegmentID == id { activeSegmentID = rundown.segments.first?.id }
+        if liveSegmentID == id { liveSegmentID = rundown.segments.first?.id }
+    }
+
+    func movePresenterSegment(from source: IndexSet, to destination: Int) {
+        guard var rundown = show.presenterRundown else { return }
+        rundown.segments.move(fromOffsets: source, toOffset: destination)
+        show.presenterRundown = rundown
+    }
+
+    func updatePresenterSegment(id: UUID, mutation: (inout PresenterSegment) -> Void) {
+        guard var rundown = show.presenterRundown,
+              let index = rundown.segments.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&rundown.segments[index])
+        show.presenterRundown = rundown
+    }
+
+    // MARK: - Presenter placeholders
+
+    @discardableResult
+    func addPresenterPlaceholder(name: String = "Placeholder") -> UUID {
+        guard var rundown = show.presenterRundown else { return UUID() }
+        let placeholder = PresenterPlaceholder(name: name)
+        rundown.placeholders.append(placeholder)
+        show.presenterRundown = rundown
+        selectedPlaceholderID = placeholder.id
+        return placeholder.id
+    }
+
+    func deletePresenterPlaceholder(id: UUID) {
+        guard var rundown = show.presenterRundown else { return }
+        rundown.placeholders.removeAll { $0.id == id }
+        for index in rundown.segments.indices where rundown.segments[index].placeholderID == id {
+            rundown.segments[index].placeholderID = nil
+        }
+        show.presenterRundown = rundown
+        if selectedPlaceholderID == id { selectedPlaceholderID = nil }
+    }
+
+    func updatePresenterPlaceholder(id: UUID, mutation: (inout PresenterPlaceholder) -> Void) {
+        guard var rundown = show.presenterRundown,
+              let index = rundown.placeholders.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&rundown.placeholders[index])
+        show.presenterRundown = rundown
+    }
+
+    func placeholder(id: UUID?) -> PresenterPlaceholder? {
+        guard let id,
+              let rundown = show.presenterRundown else { return nil }
+        return rundown.placeholders.first { $0.id == id }
+    }
+
+    func setPresenterCameraID(_ deviceID: String?, for angle: PresenterCameraAngle) {
+        guard var rundown = show.presenterRundown else { return }
+        switch angle {
+        case .primary: rundown.primaryCameraID = deviceID
+        case .secondary: rundown.secondaryCameraID = deviceID
+        }
+        show.presenterRundown = rundown
+    }
+
+    func presenterCameraID(for angle: PresenterCameraAngle) -> String? {
+        guard let rundown = show.presenterRundown else { return nil }
+        switch angle {
+        case .primary: return rundown.primaryCameraID
+        case .secondary: return rundown.secondaryCameraID
+        }
+    }
+
+    // MARK: - Presenter segment → scene mapping
+
+    /// Convert a presenter segment into a renderable Scene so the shared
+    /// StageRenderer can composite it without knowing about segments.
+    func scene(for segment: PresenterSegment) -> Scene {
+        var layers: [Layer] = []
+
+        switch segment.type {
+        case .cameraGraphic:
+            if let cameraID = presenterCameraID(for: segment.cameraAngle) {
+                layers.append(Layer(
+                    name: segment.cameraAngle.displayName,
+                    source: .camera(deviceID: cameraID),
+                    transform: .identity
+                ))
+            } else {
+                layers.append(Layer(
+                    name: "No Camera",
+                    source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
+                    transform: .identity
+                ))
+            }
+            if let placeholder = placeholder(id: segment.placeholderID),
+               let source = placeholder.source {
+                layers.append(Layer(
+                    name: placeholder.name,
+                    source: source,
+                    transform: ItemTransform(
+                        x: 0.5, y: 0.85,
+                        scaleX: 0.4, scaleY: 0.15,
+                        rotation: 0, crop: .zero
+                    )
+                ))
+            }
+
+        case .videoPackage:
+            if let url = segment.mediaURL {
+                layers.append(Layer(
+                    name: segment.name,
+                    source: .media(url: url),
+                    transform: .identity
+                ))
+            } else {
+                layers.append(Layer(
+                    name: "No Video",
+                    source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
+                    transform: .identity
+                ))
+            }
+
+        case .titleCard:
+            if let placeholder = placeholder(id: segment.placeholderID),
+               let source = placeholder.source {
+                layers.append(Layer(
+                    name: placeholder.name,
+                    source: source,
+                    transform: .identity
+                ))
+            } else {
+                layers.append(Layer(
+                    name: "No Title",
+                    source: .color(CGColorComponents(r: 0.1, g: 0.1, b: 0.1, a: 1)),
+                    transform: .identity
+                ))
+            }
+
+        case .stationBreak:
+            layers.append(Layer(
+                name: "Break",
+                source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
+                transform: .identity
+            ))
+        }
+
+        return Scene(name: segment.name, layers: layers, outputSize: CGSize(width: 1920, height: 1080))
     }
 }
