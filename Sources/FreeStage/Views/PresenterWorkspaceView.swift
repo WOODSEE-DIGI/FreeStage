@@ -13,13 +13,29 @@ import AVFoundation
 struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(\.cameraCaptureManager) private var cameraCaptureManager
+    @Environment(\.screenCaptureManager) private var screenCaptureManager
+    @Environment(\.cameraControlService) private var cameraControlService
     @State private var cameras: [CameraDevice] = []
     @State private var editingSegmentID: UUID?
+
     private var isEditingClip: Binding<Bool> {
         Binding(
             get: { editingSegmentID != nil },
             set: { if !$0 { editingSegmentID = nil } }
         )
+    }
+
+    private var requiredCameraIDs: Set<String> {
+        var ids = Set<String>()
+        ids.formUnion(cameraIDs(for: store.presenterLiveScene))
+        ids.formUnion(cameraIDs(for: store.presenterActiveScene))
+        return ids
+    }
+
+    private var requiredScreenIDs: Set<CGDirectDisplayID> {
+        // Presenter mode does not use screen-capture sources directly.
+        []
     }
 
     var body: some View {
@@ -52,12 +68,35 @@ struct PresenterWorkspaceView: View {
             }
             .padding(.vertical, 8)
         }
+        .onChange(of: requiredCameraIDs) { _, _ in
+            updateCameraCapture()
+        }
+        .task {
+            updateCameraCapture()
+        }
         .sheet(isPresented: isEditingClip) {
             if let segmentID = editingSegmentID, let binding = clipBinding(for: segmentID) {
                 VideoClipEditorView(clip: binding)
                     .frame(minWidth: 820, minHeight: 600)
             }
         }
+    }
+
+    // MARK: - Capture management
+
+    private func updateCameraCapture() {
+        cameraCaptureManager?.syncCaptures(requiredIDs: requiredCameraIDs)
+    }
+
+    private func cameraIDs(for scene: Scene?) -> Set<String> {
+        guard let scene else { return [] }
+        var ids = Set<String>()
+        for layer in scene.layers {
+            if case .camera(let deviceID) = layer.source {
+                ids.insert(deviceID)
+            }
+        }
+        return ids
     }
 
     private func clipBinding(for segmentID: UUID) -> Binding<VideoClip>? {
@@ -167,6 +206,10 @@ struct PresenterWorkspaceView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                cameraSettingsSection(for: segment)
+                gimbalSection(for: segment)
+                chromaKeySection(for: segment)
             }
 
             if segment.type == .cameraGraphic || segment.type == .titleCard {
@@ -183,6 +226,112 @@ struct PresenterWorkspaceView: View {
             TextField("Notes", text: notesBinding(for: segment))
                 .textFieldStyle(.roundedBorder)
         }
+    }
+
+    // MARK: - Camera settings in segment editor
+
+    private func cameraSettingsSection(for segment: PresenterSegment) -> some View {
+        let binding = cameraSettingsBinding(for: segment)
+        return GroupBox("Camera Framing") {
+            VStack(alignment: .leading, spacing: 8) {
+                Slider(value: binding.zoom, in: 0.1...3.0) {
+                    Text("Zoom \(binding.wrappedValue.zoom, specifier: "%.2f")")
+                }
+                HStack {
+                    Text("Pan X")
+                    Slider(value: binding.panX, in: 0...1)
+                }
+                HStack {
+                    Text("Pan Y")
+                    Slider(value: binding.panY, in: 0...1)
+                }
+            }
+        }
+    }
+
+    private func gimbalSection(for segment: PresenterSegment) -> some View {
+        let binding = cameraSettingsBinding(for: segment)
+        return GroupBox("Gimbal") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Send to Gimbal", isOn: binding.gimbalActive)
+                    .foregroundStyle(theme.text)
+
+                HStack {
+                    Text("Pan")
+                    Slider(value: binding.gimbalPan, in: -90...90)
+                    Text("\(binding.wrappedValue.gimbalPan, specifier: "%.0f")°")
+                        .monospacedDigit()
+                        .frame(width: 40, alignment: .trailing)
+                }
+                HStack {
+                    Text("Tilt")
+                    Slider(value: binding.gimbalTilt, in: -45...45)
+                    Text("\(binding.wrappedValue.gimbalTilt, specifier: "%.0f")°")
+                        .monospacedDigit()
+                        .frame(width: 40, alignment: .trailing)
+                }
+
+                if let service = cameraControlService {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(service.isGimbalConnected ? Color.green : Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text(service.isGimbalConnected ? "Gimbal connected" : "Gimbal not connected")
+                            .font(.caption2)
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                }
+            }
+        }
+    }
+
+    private func chromaKeySection(for segment: PresenterSegment) -> some View {
+        let binding = chromaKeyBinding(for: segment)
+        return GroupBox("Chroma Key") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Enabled", isOn: binding.isEnabled)
+                    .foregroundStyle(theme.text)
+
+                Picker("Preset", selection: binding.keyColorPreset) {
+                    ForEach(ChromaKeyColorPreset.allCases) { preset in
+                        Text(preset.displayName).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack {
+                    Text("Threshold")
+                    Slider(value: binding.threshold, in: 0...1)
+                }
+                HStack {
+                    Text("Smoothing")
+                    Slider(value: binding.smoothing, in: 0...1)
+                }
+            }
+        }
+    }
+
+    private func cameraSettingsBinding(for segment: PresenterSegment) -> Binding<CameraSettings> {
+        Binding(
+            get: { segment.cameraSettings ?? CameraSettings() },
+            set: { newValue in
+                store.updatePresenterSegment(id: segment.id) { $0.cameraSettings = newValue }
+                if newValue.gimbalActive,
+                   let service = cameraControlService,
+                   let deviceID = store.presenterCameraID(for: segment.cameraAngle) {
+                    service.apply(settings: newValue, to: deviceID)
+                }
+            }
+        )
+    }
+
+    private func chromaKeyBinding(for segment: PresenterSegment) -> Binding<ChromaKeyFilter> {
+        Binding(
+            get: { segment.chromaKeyFilter ?? ChromaKeyFilter(isEnabled: false) },
+            set: { newValue in
+                store.updatePresenterSegment(id: segment.id) { $0.chromaKeyFilter = newValue }
+            }
+        )
     }
 
     private func placeholderPicker(for segment: PresenterSegment) -> some View {

@@ -1081,6 +1081,7 @@ final class ShowStore: NSObject {
         }
         stopCameraMove()
         liveSegmentID = activeSegmentID
+        applyPresenterGimbalIfNeeded(for: liveSegment)
 
         guard let index = rundown.segments.firstIndex(where: { $0.id == activeSegmentID }),
               index + 1 < rundown.segments.count else {
@@ -1097,6 +1098,20 @@ final class ShowStore: NSObject {
         stopCameraMove()
         activeSegmentID = id
         liveSegmentID = id
+        applyPresenterGimbalIfNeeded(for: liveSegment)
+    }
+
+    /// When a presenter segment goes live and it has gimbal-active camera
+    /// settings, send the pose to the physical gimbal for that camera angle.
+    private func applyPresenterGimbalIfNeeded(for segment: PresenterSegment?) {
+        guard let segment,
+              segment.type == .cameraGraphic,
+              let settings = segment.cameraSettings,
+              settings.gimbalActive,
+              let service = cameraControlService,
+              let deviceID = presenterCameraID(for: segment.cameraAngle) else { return }
+        let zone = show.cameraLimitZones[deviceID]
+        service.apply(settings: settings, to: deviceID, limitZone: zone)
     }
 
     func selectPreviousSegment() {
@@ -1222,6 +1237,18 @@ final class ShowStore: NSObject {
         }
     }
 
+    private func cameraTransform(from settings: CameraSettings?) -> ItemTransform {
+        guard let settings else { return .identity }
+        return ItemTransform(
+            x: settings.panX,
+            y: settings.panY,
+            scaleX: settings.zoom,
+            scaleY: settings.zoom,
+            rotation: 0,
+            crop: .zero
+        )
+    }
+
     // MARK: - Presenter segment → scene mapping
 
     /// Convert a presenter segment into a renderable Scene so the shared
@@ -1232,11 +1259,16 @@ final class ShowStore: NSObject {
         switch segment.type {
         case .cameraGraphic:
             if let cameraID = presenterCameraID(for: segment.cameraAngle) {
-                layers.append(Layer(
+                var cameraLayer = Layer(
                     name: segment.cameraAngle.displayName,
                     source: .camera(deviceID: cameraID),
-                    transform: .identity
-                ))
+                    transform: cameraTransform(from: segment.cameraSettings)
+                )
+                cameraLayer.cameraSettings = segment.cameraSettings
+                if let chromaKey = segment.chromaKeyFilter {
+                    cameraLayer.filters.append(.chromaKey(chromaKey))
+                }
+                layers.append(cameraLayer)
             } else {
                 layers.append(Layer(
                     name: "No Camera",

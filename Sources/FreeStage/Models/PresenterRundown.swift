@@ -61,6 +61,10 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
     var videoClip: VideoClip?
     /// For cameraGraphic segments: which camera angle to use.
     var cameraAngle: PresenterCameraAngle
+    /// Optional chroma-key filter applied to the camera layer.
+    var chromaKeyFilter: ChromaKeyFilter?
+    /// Optional camera settings (gimbal pose, zoom, etc.) applied to the camera layer.
+    var cameraSettings: CameraSettings?
     /// If true, automatically advance to the next segment when this one ends.
     /// Primarily used for video packages.
     var autoFollow: Bool
@@ -83,6 +87,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         placeholderID: UUID? = nil,
         videoClip: VideoClip? = nil,
         cameraAngle: PresenterCameraAngle = .primary,
+        chromaKeyFilter: ChromaKeyFilter? = nil,
+        cameraSettings: CameraSettings? = nil,
         autoFollow: Bool = false,
         notes: String = ""
     ) {
@@ -92,12 +98,15 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         self.placeholderID = placeholderID
         self.videoClip = videoClip
         self.cameraAngle = cameraAngle
+        self.chromaKeyFilter = chromaKeyFilter
+        self.cameraSettings = cameraSettings
         self.autoFollow = autoFollow
         self.notes = notes
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, type, placeholderID, videoClip, cameraAngle, autoFollow, notes
+        case id, name, type, placeholderID, videoClip, cameraAngle
+        case chromaKeyFilter, cameraSettings, autoFollow, notes
         case mediaURL, duration
     }
 
@@ -108,6 +117,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         type = try container.decode(PresenterSegmentType.self, forKey: .type)
         placeholderID = try container.decodeIfPresent(UUID.self, forKey: .placeholderID)
         cameraAngle = try container.decodeIfPresent(PresenterCameraAngle.self, forKey: .cameraAngle) ?? .primary
+        chromaKeyFilter = try container.decodeIfPresent(ChromaKeyFilter.self, forKey: .chromaKeyFilter)
+        cameraSettings = try container.decodeIfPresent(CameraSettings.self, forKey: .cameraSettings)
         autoFollow = try container.decodeIfPresent(Bool.self, forKey: .autoFollow) ?? false
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
 
@@ -130,6 +141,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         try container.encodeIfPresent(placeholderID, forKey: .placeholderID)
         try container.encodeIfPresent(videoClip, forKey: .videoClip)
         try container.encode(cameraAngle, forKey: .cameraAngle)
+        try container.encodeIfPresent(chromaKeyFilter, forKey: .chromaKeyFilter)
+        try container.encodeIfPresent(cameraSettings, forKey: .cameraSettings)
         try container.encode(autoFollow, forKey: .autoFollow)
         try container.encode(notes, forKey: .notes)
     }
