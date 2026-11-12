@@ -2,126 +2,50 @@
 //  DragDivider.swift
 //  FreeStage
 //
-//  AppKit-based vertical divider. Reports raw mouse deltaX during a drag so
-//  the parent can resize columns reliably. Uses a local event monitor during
-//  the drag so it keeps receiving events even if the view moves or another
-//  SwiftUI view would otherwise intercept them.
+//  Draggable vertical divider rendered entirely in SwiftUI. Uses a DragGesture
+//  in the global coordinate space so it tracks correctly even when the
+//  surrounding layout relayouts during the drag.
 //
 
 import SwiftUI
-import AppKit
 
-struct DragDivider: NSViewRepresentable {
+struct DragDivider: View {
     let onDrag: (CGFloat) -> Void
 
-    func makeNSView(context: Context) -> DragDividerView {
-        let view = DragDividerView()
-        view.coordinator = context.coordinator
-        return view
-    }
+    /// Cumulative translation at the previous onChanged callback, used to
+    /// report true deltas instead of absolute offsets.
+    @State private var lastTranslation: CGFloat = 0
 
-    func updateNSView(_ nsView: DragDividerView, context: Context) {
-        context.coordinator.onDrag = onDrag
-        nsView.coordinator = context.coordinator
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onDrag: onDrag)
-    }
-
-    final class Coordinator: NSObject {
-        var onDrag: (CGFloat) -> Void
-
-        init(onDrag: @escaping (CGFloat) -> Void) {
-            self.onDrag = onDrag
-        }
-    }
-}
-
-final class DragDividerView: NSView {
-    weak var coordinator: DragDivider.Coordinator?
-    private var eventMonitor: Any?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        commonInit()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        commonInit()
-    }
-
-    private func commonInit() {
-        wantsLayer = true
-        // Slightly tinted layer background so the full 14 pt strip participates
-        // in hit-testing, not just the 1 pt visible line.
-        layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.05).cgColor
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        NSColor.secondaryLabelColor.withAlphaComponent(0.25).setFill()
-        let lineRect = NSRect(x: bounds.midX - 0.5, y: bounds.minY + 4, width: 1, height: bounds.height - 8)
-        lineRect.fill()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-
-        // Install a local event monitor so drag/up events are captured even if
-        // the divider view moves under the cursor during the drag.
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
-            guard let self else { return event }
-            switch event.type {
-            case .leftMouseDragged:
-                self.coordinator?.onDrag(CGFloat(event.deltaX))
-                return nil
-            case .leftMouseUp:
-                self.endDrag()
-                return event
-            default:
-                return event
+    var body: some View {
+        Rectangle()
+            // Nearly-transparent fill so the full 14 pt strip is hit-testable,
+            // not just the 1 pt visible line.
+            .fill(Color.secondary.opacity(0.001))
+            .overlay(alignment: .center) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
             }
-        }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        endDrag()
-    }
-
-    private func endDrag() {
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-            self.eventMonitor = nil
-        }
-        window?.makeFirstResponder(nil)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        NSCursor.resizeLeftRight.set()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSCursor.arrow.set()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        let options: NSTrackingArea.Options = [
-            .activeAlways,
-            .mouseEnteredAndExited,
-            .cursorUpdate,
-            .inVisibleRect,
-        ]
-        addTrackingArea(NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil))
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        updateTrackingAreas()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        let current = value.translation.width
+                        let delta = current - lastTranslation
+                        lastTranslation = current
+                        onDrag(delta)
+                    }
+                    .onEnded { _ in
+                        lastTranslation = 0
+                    }
+            )
+            .onHover { isHovering in
+                if isHovering {
+                    NSCursor.resizeLeftRight.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
     }
 }
