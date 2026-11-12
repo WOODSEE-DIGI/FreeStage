@@ -10,11 +10,11 @@ import SwiftUI
 struct MastheadView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(AppSettings.self) private var appSettings
     @Environment(\.cameraCaptureManager) private var captureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
     @Environment(\.recordingService) private var recordingService
     @Environment(\.virtualCameraOutputService) private var virtualCamera
-    @Environment(\.appSettings) private var appSettings
     @State private var isAddingCamera = false
     @State private var isAddingScreen = false
     @State private var isAddingSlideshow = false
@@ -205,11 +205,11 @@ struct MastheadView: View {
     private func performGo() {
         if !store.isEditMode {
             // Show mode: arm outputs before the cue fires.
-            if appSettings?.startVirtualCameraOnShowMode == true,
+            if appSettings.startVirtualCameraOnShowMode,
                let virtualCamera, !virtualCamera.isExtensionActive {
                 virtualCamera.activate()
             }
-            if appSettings?.recordOnGo == true,
+            if appSettings.recordOnGo,
                let recordingService, !recordingService.isRecording {
                 do {
                     let url = try recordingService.startRecording()
@@ -224,7 +224,7 @@ struct MastheadView: View {
 
         if !store.isEditMode,
            case .atEnd = result,
-           appSettings?.autoStopRecordingOnShowEnd == true,
+           appSettings.autoStopRecordingOnShowEnd,
            let recordingService, recordingService.isRecording {
             Task {
                 do {

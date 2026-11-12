@@ -10,10 +10,10 @@ import SwiftUI
 struct FooterView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(AppSettings.self) private var appSettings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.recordingService) private var recordingService
     @Environment(\.virtualCameraOutputService) private var virtualCamera
-    @Environment(\.appSettings) private var appSettings
 
     var body: some View {
         HStack(spacing: 16) {
@@ -107,7 +107,7 @@ struct FooterView: View {
     }
 
     private func enterShowMode() {
-        if appSettings?.startVirtualCameraOnShowMode == true,
+        if appSettings.startVirtualCameraOnShowMode,
            let virtualCamera, !virtualCamera.isExtensionActive {
             virtualCamera.activate()
         }

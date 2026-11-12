@@ -11,7 +11,7 @@ import SwiftUI
 struct CueListView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
-    @Environment(\.appSettings) private var appSettings
+    @Environment(AppSettings.self) private var appSettings
 
     var body: some View {
         @Bindable var store = store
@@ -155,7 +155,7 @@ struct CueListView: View {
     }
 
     private func copyHTTPTriggerURL(for cue: Cue) {
-        let port = appSettings?.cueTriggerServerPort ?? 17352
+        let port = appSettings.cueTriggerServerPort
         let url = "http://localhost:\(port)/cue/\(cue.id.uuidString)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)

@@ -107,7 +107,7 @@ struct FreeStageApp: App {
             .environment(\.cameraControlService, cameraControlService)
             .environment(\.goStreamController, goStreamController)
             .environment(\.virtualCameraOutputService, virtualCamera)
-            .environment(\.appSettings, appSettings)
+            .environment(appSettings)
             .environment(\.cueTriggerServer, cueTriggerServer)
             .environment(\.oscCueServer, oscCueServer)
             .environment(\.streamingService, streamingService)
