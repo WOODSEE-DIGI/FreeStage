@@ -1260,6 +1260,16 @@ final class ShowStore: NSObject {
     func scene(for segment: PresenterSegment) -> Scene {
         var layers: [Layer] = []
 
+        // Global presenter background (virtual set), rendered behind the
+        // segment content so it stays full-frame regardless of camera framing.
+        if let backgroundSource = show.presenterRundown?.backgroundSource {
+            layers.append(Layer(
+                name: "Background",
+                source: backgroundSource,
+                transform: show.presenterRundown?.backgroundTransform ?? .identity
+            ))
+        }
+
         switch segment.type {
         case .cameraGraphic:
             if let cameraID = presenterCameraID(for: segment.cameraAngle) {

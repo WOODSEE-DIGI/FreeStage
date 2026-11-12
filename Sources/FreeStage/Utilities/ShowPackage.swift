@@ -167,6 +167,7 @@ enum ShowPackage {
             }
         }
         if let rundown = show.presenterRundown {
+            urls.append(contentsOf: rundown.backgroundSource?.fileURLs().filter(\.isFileURL) ?? [])
             for segment in rundown.segments {
                 if let clip = segment.videoClip {
                     urls.append(clip.sourceURL)

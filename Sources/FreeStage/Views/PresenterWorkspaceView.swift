@@ -23,6 +23,7 @@ struct PresenterWorkspaceView: View {
     @State private var isSegmentEditorExpanded = false
     @State private var playbackRefreshID = UUID()
     @State private var isPickingChromaBackground = false
+    @State private var isPickingGlobalBackground = false
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -120,6 +121,25 @@ struct PresenterWorkspaceView: View {
                 filter.backgroundSource = source
                 segment.chromaKeyFilter = filter
             }
+        }
+        .fileImporter(
+            isPresented: $isPickingGlobalBackground,
+            allowedContentTypes: [.image, .movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            let source: Source
+            if let type = UTType(filenameExtension: url.pathExtension),
+               type.conforms(to: .image) {
+                source = .image(url: url)
+            } else {
+                source = .media(url: url)
+            }
+            guard var rundown = store.presenterRundown else { return }
+            rundown.backgroundSource = source
+            rundown.backgroundTransform = .identity
+            store.show.presenterRundown = rundown
         }
     }
 
@@ -767,6 +787,10 @@ struct PresenterWorkspaceView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 12)
 
+            backgroundSection
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
             Divider()
                 .padding(.horizontal)
                 .padding(.bottom, 8)
@@ -832,6 +856,60 @@ struct PresenterWorkspaceView: View {
 
             cameraPicker(angle: .primary, label: "Primary")
             cameraPicker(angle: .secondary, label: "Secondary")
+        }
+    }
+
+    private var backgroundSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Background")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+            }
+
+            if let source = store.presenterRundown?.backgroundSource {
+                HStack {
+                    Text(source.defaultName)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    Button("Clear") {
+                        guard var rundown = store.presenterRundown else { return }
+                        rundown.backgroundSource = nil
+                        rundown.backgroundTransform = .identity
+                        store.show.presenterRundown = rundown
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                }
+
+                HStack {
+                    Text("Zoom")
+                        .font(.caption)
+                        .foregroundStyle(theme.text)
+                    Slider(
+                        value: Binding(
+                            get: { store.presenterRundown?.backgroundTransform.scaleX ?? 1 },
+                            set: { newValue in
+                                guard var rundown = store.presenterRundown else { return }
+                                rundown.backgroundTransform.scaleX = newValue
+                                rundown.backgroundTransform.scaleY = newValue
+                                store.show.presenterRundown = rundown
+                            }
+                        ),
+                        in: 0.1...5
+                    )
+                }
+            } else {
+                Button {
+                    isPickingGlobalBackground = true
+                } label: {
+                    Label("Choose Image/Video…", systemImage: "photo")
+                }
+                .font(.caption)
+            }
         }
     }
 

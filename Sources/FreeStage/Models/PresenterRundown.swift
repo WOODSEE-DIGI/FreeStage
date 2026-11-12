@@ -20,19 +20,30 @@ struct PresenterRundown: Identifiable, Hashable, Codable, Sendable {
     var primaryCameraID: String?
     /// Device uniqueID for the secondary/alt angle camera.
     var secondaryCameraID: String?
+    /// Optional global background source rendered behind every presenter
+    /// segment (e.g. a virtual set image/video). Separate from the chroma-key
+    /// filter background so it stays full-frame even when the camera layer is
+    /// repositioned or zoomed.
+    var backgroundSource: Source?
+    /// Transform for the global background source.
+    var backgroundTransform: ItemTransform
 
     init(
         id: UUID = UUID(),
         segments: [PresenterSegment] = [],
         placeholders: [PresenterPlaceholder] = [],
         primaryCameraID: String? = nil,
-        secondaryCameraID: String? = nil
+        secondaryCameraID: String? = nil,
+        backgroundSource: Source? = nil,
+        backgroundTransform: ItemTransform = .identity
     ) {
         self.id = id
         self.segments = segments
         self.placeholders = placeholders
         self.primaryCameraID = primaryCameraID
         self.secondaryCameraID = secondaryCameraID
+        self.backgroundSource = backgroundSource
+        self.backgroundTransform = backgroundTransform
     }
 
     /// A default starter rundown with one of each segment type.
