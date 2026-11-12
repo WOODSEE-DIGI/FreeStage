@@ -98,6 +98,7 @@ struct PresenterWorkspaceView: View {
                             }
                         }
                         .frame(width: dividerThickness)
+                        .zIndex(1)
 
                         VStack(spacing: 12) {
                             liveMonitor
@@ -106,10 +107,15 @@ struct PresenterWorkspaceView: View {
                         .frame(minWidth: centreMin, maxWidth: centerWidth)
 
                         DragDivider { delta in
-                            let newRight = rightColumnWidth + delta
+                            // Standard split-view behaviour: dragging the right
+                            // divider right makes the right column narrower and
+                            // the centre column wider, so the divider follows
+                            // the cursor.
+                            let newRight = rightColumnWidth - delta
                             rightColumnWidth = min(max(newRight, rightMin), rightMax)
                         }
                         .frame(width: dividerThickness)
+                        .zIndex(1)
 
                         placeholderPanel
                             .frame(minWidth: rightWidth, maxWidth: rightWidth)
@@ -238,10 +244,14 @@ struct PresenterWorkspaceView: View {
 
     /// Computes the three column widths for the presenter workspace.
     ///
-    /// The centre column is sized so the 16:9 monitors fit exactly without
-    /// pillarboxing, then any leftover horizontal space is given to the editor
-    /// when it is expanded. Only when the window is too narrow to honour both
-    /// desired side widths do the left/right columns shrink proportionally.
+    /// The centre column defaults to the ideal 16:9 width for the available
+    /// height so the monitors fill it without pillarboxing. When a divider is
+    /// dragged, the adjacent columns resize like a standard split view: the
+    /// dragged divider follows the cursor and the centre column can grow or
+    /// shrink. Any leftover horizontal space at the default size is given to
+    /// the editor/left column first. If the window is too narrow to fit the
+    /// desired side widths and the minimum centre width, the side columns
+    /// shrink proportionally.
     private func columnWidths(totalWidth: CGFloat, totalHeight: CGFloat) -> (left: CGFloat, right: CGFloat, center: CGFloat) {
         // Size the centre column so the 16:9 monitors fit exactly
         // without pillarboxing. Each monitor has a header (~32 pt)
@@ -253,28 +263,31 @@ struct PresenterWorkspaceView: View {
         let desiredLeftWidth = isSegmentEditorExpanded
             ? min(max(leftExpandedMin, leftColumnWidth), leftExpandedMax)
             : min(max(rundownMin, rundownColumnWidth), rundownMax)
-        let desiredRightWidth = max(rightMin, rightColumnWidth)
+        let desiredRightWidth = min(max(rightMin, rightColumnWidth), rightMax)
 
-        // Keep the centre at its ideal monitor width. Distribute
-        // any leftover horizontal space to the editor first; shrink
-        // left/right proportionally only when the window is too
-        // narrow to honour both desired widths.
-        let sideBudget = max(0, totalWidth - idealCenterWidth - dividerThickness * 2)
-        let desiredSideTotal = desiredLeftWidth + desiredRightWidth
+        // Standard split view: centre fills the remaining width after left,
+        // right, and the two dividers are accounted for.
+        var centerWidth = totalWidth - desiredLeftWidth - desiredRightWidth - dividerThickness * 2
 
-        if desiredSideTotal <= sideBudget {
-            let leftover = sideBudget - desiredSideTotal
-            let leftWidth = desiredLeftWidth + leftover
-            let rightWidth = desiredRightWidth
-            let centerWidth = idealCenterWidth
-            return (leftWidth, rightWidth, centerWidth)
-        } else {
-            let scale = sideBudget / desiredSideTotal
+        // If the window is too narrow, scale the side columns proportionally
+        // so the centre never shrinks below its minimum.
+        if centerWidth < centreMin {
+            let scale = (totalWidth - dividerThickness * 2 - centreMin) / (desiredLeftWidth + desiredRightWidth)
             let leftWidth = max(isSegmentEditorExpanded ? leftExpandedMin : rundownMin, desiredLeftWidth * scale)
             let rightWidth = max(rightMin, desiredRightWidth * scale)
-            let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
-            return (leftWidth, rightWidth, centerWidth)
+            centerWidth = totalWidth - leftWidth - rightWidth - dividerThickness * 2
+            return (leftWidth, rightWidth, max(centreMin, centerWidth))
         }
+
+        // At the default size, keep the centre at its ideal monitor width and
+        // give any leftover horizontal space to the editor/left column so the
+        // monitors do not pillarbox.
+        if centerWidth > idealCenterWidth {
+            let leftover = centerWidth - idealCenterWidth
+            return (desiredLeftWidth + leftover, desiredRightWidth, idealCenterWidth)
+        }
+
+        return (desiredLeftWidth, desiredRightWidth, centerWidth)
     }
 
     // MARK: - Header
@@ -842,9 +855,12 @@ struct PresenterWorkspaceView: View {
     }
 
     private func rowBackground(for segment: PresenterSegment) -> some View {
-        let isSelected = segment.id == store.activeSegmentID
+        // Only the live segment gets a tinted row background. The selected/
+        // preview segment is indicated by the List selection highlight and the
+        // icon colour in the icon strip, so two rows are no longer highlighted
+        // at once.
         let isLive = segment.id == store.liveSegmentID
-        return (isLive ? theme.selected.opacity(0.25) : (isSelected ? theme.selected.opacity(0.12) : Color.clear))
+        return isLive ? theme.selected.opacity(0.25) : Color.clear
     }
 
     // MARK: - Monitors
