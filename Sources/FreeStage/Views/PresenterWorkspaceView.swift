@@ -14,6 +14,13 @@ struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
     @State private var cameras: [CameraDevice] = []
+    @State private var editingSegmentID: UUID?
+    private var isEditingClip: Binding<Bool> {
+        Binding(
+            get: { editingSegmentID != nil },
+            set: { if !$0 { editingSegmentID = nil } }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -45,6 +52,24 @@ struct PresenterWorkspaceView: View {
             }
             .padding(.vertical, 8)
         }
+        .sheet(isPresented: isEditingClip) {
+            if let segmentID = editingSegmentID, let binding = clipBinding(for: segmentID) {
+                VideoClipEditorView(clip: binding)
+                    .frame(minWidth: 820, minHeight: 600)
+            }
+        }
+    }
+
+    private func clipBinding(for segmentID: UUID) -> Binding<VideoClip>? {
+        guard let rundown = store.presenterRundown,
+              let index = rundown.segments.firstIndex(where: { $0.id == segmentID }),
+              rundown.segments[index].videoClip != nil else { return nil }
+        return Binding<VideoClip>(
+            get: { store.presenterRundown!.segments[index].videoClip! },
+            set: { newClip in
+                store.updatePresenterSegment(id: segmentID) { $0.videoClip = newClip }
+            }
+        )
     }
 
     // MARK: - Header
@@ -202,10 +227,9 @@ struct PresenterWorkspaceView: View {
 
             if segment.videoClip != nil {
                 Button("Open Clip Editor") {
-                    // Sheet presented via .sheet on the workspace view.
+                    editingSegmentID = segment.id
                 }
-                .disabled(true)
-                .help("Clip editor coming in the next build")
+                .help("Scrub, set in/out points, and export a subclip")
             }
         }
     }

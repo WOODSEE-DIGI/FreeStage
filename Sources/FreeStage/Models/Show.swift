@@ -93,6 +93,24 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         for layerIndex in globalLayers.indices {
             globalLayers[layerIndex].resolveBookmarks(using: bookmarks)
         }
+        if presenterRundown != nil {
+            for index in presenterRundown!.segments.indices {
+                if presenterRundown!.segments[index].videoClip != nil {
+                    presenterRundown!.segments[index].videoClip!.sourceURL = resolveBookmarkedURL(presenterRundown!.segments[index].videoClip!.sourceURL)
+                    presenterRundown!.segments[index].videoClip!.proxyURL = presenterRundown!.segments[index].videoClip!.proxyURL.map(resolveBookmarkedURL)
+                    presenterRundown!.segments[index].videoClip!.subclipURL = presenterRundown!.segments[index].videoClip!.subclipURL.map(resolveBookmarkedURL)
+                }
+            }
+        }
+    }
+
+    private func resolveBookmarkedURL(_ url: URL) -> URL {
+        guard url.isFileURL,
+              let data = bookmarks[url.absoluteString],
+              let resolved = SecurityScopedBookmark.resolve(data) else {
+            return url
+        }
+        return resolved
     }
 
     /// Return a copy of the show with every file URL transformed by `map`.
@@ -106,6 +124,17 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
         }
         for layerIndex in copy.globalLayers.indices {
             copy.globalLayers[layerIndex].withFileURLs(map)
+        }
+        if var rundown = copy.presenterRundown {
+            for index in rundown.segments.indices {
+                if var clip = rundown.segments[index].videoClip {
+                    clip.sourceURL = map(clip.sourceURL)
+                    clip.proxyURL = clip.proxyURL.map(map)
+                    clip.subclipURL = clip.subclipURL.map(map)
+                    rundown.segments[index].videoClip = clip
+                }
+            }
+            copy.presenterRundown = rundown
         }
         return copy
     }

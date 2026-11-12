@@ -168,6 +168,15 @@ enum ShowPackage {
                 urls.append(contentsOf: filterFileURLs(in: filter).filter(\.isFileURL))
             }
         }
+        if let rundown = show.presenterRundown {
+            for segment in rundown.segments {
+                if let clip = segment.videoClip {
+                    urls.append(clip.sourceURL)
+                    if let proxyURL = clip.proxyURL { urls.append(proxyURL) }
+                    if let subclipURL = clip.subclipURL { urls.append(subclipURL) }
+                }
+            }
+        }
         return Array(Set(urls))
     }
 
