@@ -30,6 +30,11 @@ private struct MediaSessionKey: Hashable {
 }
 
 final class MediaSourceRenderer: @unchecked Sendable {
+    /// Shared instance used by both the renderer and the UI transport controls.
+    /// AVPlayer sessions are keyed by URL + trim range, so the same player
+    /// drives both compositing and user-facing playback.
+    static let shared = MediaSourceRenderer()
+
     private final class Session: @unchecked Sendable {
         let url: URL
         let inPoint: TimeInterval
@@ -146,12 +151,75 @@ final class MediaSourceRenderer: @unchecked Sendable {
 
     private var sessions: [MediaSessionKey: Session] = [:]
     private let lock = NSLock()
+    private lazy var device: MTLDevice? = MTLCreateSystemDefaultDevice()
+
+    private init() {}
+
+    // MARK: - Playback control
+
+    func play(source: Source) {
+        session(for: source)?.start()
+    }
+
+    func pause(source: Source) {
+        session(for: source)?.player.pause()
+    }
+
+    func setPlaybackRate(_ rate: Float, for source: Source) {
+        session(for: source)?.player.rate = rate
+    }
+
+    func seek(to time: TimeInterval, for source: Source) {
+        guard let session = session(for: source) else { return }
+        let duration = session.item.duration.seconds
+        let clamped = duration.isFinite && duration > 0 ? max(0, min(time, duration)) : max(0, time)
+        session.player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600))
+    }
+
+    func restart(source: Source) {
+        guard let session = session(for: source) else { return }
+        let start = CMTime(seconds: session.inPoint, preferredTimescale: 600)
+        session.player.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+            session.player.play()
+        }
+    }
+
+    func isPlaying(source: Source) -> Bool {
+        (session(for: source)?.player.rate ?? 0) > 0
+    }
+
+    func currentTime(for source: Source) -> TimeInterval {
+        session(for: source)?.player.currentTime().seconds ?? 0
+    }
+
+    private func session(for source: Source) -> Session? {
+        let key: MediaSessionKey
+        switch source {
+        case .media(let url):
+            key = MediaSessionKey(url: url)
+        case .mediaClip(let url, let inPoint, let outPoint):
+            key = MediaSessionKey(url: url, inPoint: inPoint, outPoint: outPoint)
+        default:
+            return nil
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        return sessions[key]
+    }
+
+    // MARK: - Rendering
 
     func render(
         source: Source,
         device: MTLDevice,
         commandQueue: MTLCommandQueue
     ) throws -> MTLTexture? {
+        render(source: source)
+    }
+
+    /// Internal render path that uses the shared Metal device.
+    @discardableResult
+    func render(source: Source) -> MTLTexture? {
         let (url, inPoint, outPoint): (URL, TimeInterval, TimeInterval?)
         switch source {
         case .media(let mediaURL):
@@ -162,6 +230,7 @@ final class MediaSourceRenderer: @unchecked Sendable {
             return nil
         }
 
+        guard let device else { return nil }
         let key = MediaSessionKey(url: url, inPoint: inPoint, outPoint: outPoint)
 
         lock.lock()

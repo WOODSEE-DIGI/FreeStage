@@ -29,7 +29,7 @@ struct SourceRendererRegistry: Sendable {
     private let drawingRenderer = DrawingSourceRenderer()
     private let textRenderer = TextSourceRenderer()
     private let templateRenderer = TemplateSourceRenderer()
-    private let mediaRenderer = MediaSourceRenderer()
+    private let mediaRenderer = MediaSourceRenderer.shared
     private let cameraRenderer: CameraSourceRenderer
     private let screenRenderer: ScreenSourceRenderer
     private let facePuppetRenderer: FacePuppetSourceRenderer

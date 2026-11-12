@@ -9,6 +9,7 @@
 
 import SwiftUI
 import AVFoundation
+import Combine
 
 struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
@@ -19,6 +20,8 @@ struct PresenterWorkspaceView: View {
     @State private var cameras: [CameraDevice] = []
     @State private var editingSegmentID: UUID?
     @State private var isSegmentEditorExpanded = false
+    @State private var playbackRefreshID = UUID()
+    private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
         Binding(
@@ -85,6 +88,9 @@ struct PresenterWorkspaceView: View {
         }
         .task {
             updateCameraCapture()
+        }
+        .onReceive(playbackTimer) { _ in
+            playbackRefreshID = UUID()
         }
         .sheet(isPresented: isEditingClip) {
             if let segmentID = editingSegmentID, let binding = clipBinding(for: segmentID) {
@@ -628,6 +634,30 @@ struct PresenterWorkspaceView: View {
 
     // MARK: - Monitors
 
+    /// The first media source in the live scene, if any. Used to wire
+    /// transport controls to the active video package.
+    private var liveMediaSource: Source? {
+        firstMediaSource(in: store.presenterLiveScene)
+    }
+
+    /// The first media source in the preview (active) scene, if any.
+    private var activeMediaSource: Source? {
+        firstMediaSource(in: store.presenterActiveScene)
+    }
+
+    private func firstMediaSource(in scene: Scene?) -> Source? {
+        guard let scene else { return nil }
+        for layer in scene.layers {
+            switch layer.source {
+            case .media, .mediaClip:
+                return layer.source
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
     private var liveMonitor: some View {
         StageMonitorView(
             scene: store.presenterLiveScene,
@@ -828,6 +858,10 @@ struct PresenterWorkspaceView: View {
                 Label("Previous", systemImage: "backward.frame")
             }
 
+            if let liveSource = liveMediaSource {
+                videoTransportControls(for: liveSource)
+            }
+
             Spacer()
 
             Button {
@@ -850,5 +884,32 @@ struct PresenterWorkspaceView: View {
         .padding()
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func videoTransportControls(for source: Source) -> some View {
+        // Reading the refresh ID forces SwiftUI to re-evaluate the button icon
+        // while the timer ticks.
+        let _ = playbackRefreshID
+
+        HStack(spacing: 8) {
+            Button {
+                MediaSourceRenderer.shared.restart(source: source)
+            } label: {
+                Image(systemName: "backward.end.fill")
+            }
+            .help("Restart video")
+
+            Button {
+                if MediaSourceRenderer.shared.isPlaying(source: source) {
+                    MediaSourceRenderer.shared.pause(source: source)
+                } else {
+                    MediaSourceRenderer.shared.play(source: source)
+                }
+            } label: {
+                Image(systemName: MediaSourceRenderer.shared.isPlaying(source: source) ? "pause.fill" : "play.fill")
+            }
+            .help(MediaSourceRenderer.shared.isPlaying(source: source) ? "Pause video" : "Play video")
+        }
     }
 }
