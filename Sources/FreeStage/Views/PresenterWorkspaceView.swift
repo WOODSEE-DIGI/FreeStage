@@ -82,7 +82,7 @@ struct PresenterWorkspaceView: View {
 
                     HStack(spacing: 0) {
                         leftPanel(totalWidth: leftWidth)
-                            .frame(width: leftWidth)
+                            .frame(minWidth: leftWidth, maxWidth: leftWidth)
 
                         DragDivider { delta in
                             guard isSegmentEditorExpanded else { return }
@@ -95,7 +95,7 @@ struct PresenterWorkspaceView: View {
                             liveMonitor
                             previewMonitor
                         }
-                        .frame(width: centerWidth)
+                        .frame(minWidth: centreMin, maxWidth: centerWidth)
 
                         DragDivider { delta in
                             let newRight = rightColumnWidth - delta
@@ -104,7 +104,7 @@ struct PresenterWorkspaceView: View {
                         .frame(width: dividerThickness)
 
                         placeholderPanel
-                            .frame(width: rightWidth)
+                            .frame(minWidth: rightWidth, maxWidth: rightWidth)
                     }
                     .animation(.none, value: isSegmentEditorExpanded)
                 }
@@ -405,6 +405,7 @@ struct PresenterWorkspaceView: View {
             TextField("Notes", text: notesBinding(for: segment))
                 .textFieldStyle(.roundedBorder)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Full-height editor shown beside the icon rundown when expanded.
@@ -454,11 +455,14 @@ struct PresenterWorkspaceView: View {
                     Text("Pan X")
                     Slider(value: binding.panX, in: 0...1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
                     Text("Pan Y")
                     Slider(value: binding.panY, in: 0...1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -476,6 +480,7 @@ struct PresenterWorkspaceView: View {
                         .monospacedDigit()
                         .frame(width: 40, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
                     Text("Tilt")
                     Slider(value: binding.gimbalTilt, in: -45...45)
@@ -483,6 +488,7 @@ struct PresenterWorkspaceView: View {
                         .monospacedDigit()
                         .frame(width: 40, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let service = cameraControlService {
                     HStack(spacing: 4) {
@@ -495,6 +501,7 @@ struct PresenterWorkspaceView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -519,18 +526,22 @@ struct PresenterWorkspaceView: View {
                         .monospacedDigit()
                         .frame(width: 40, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack {
                     Text("Threshold")
                     Slider(value: binding.threshold, in: 0...1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
                     Text("Smoothing")
                     Slider(value: binding.smoothing, in: 0...1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 chromaKeyBackgroundSection(for: segment)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -570,6 +581,7 @@ struct PresenterWorkspaceView: View {
                         in: 0.1...5
                     )
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Button {
                     isPickingChromaBackground = true
