@@ -1252,6 +1252,68 @@ final class ShowStore: NSObject {
         show.presenterRundown = rundown
     }
 
+    // MARK: - Presenter cue (segment) layers
+
+    @discardableResult
+    func addPresenterSegmentLayer(segmentID: UUID, source: Source, name: String? = nil) -> UUID {
+        let layer = Layer(
+            name: name ?? source.defaultName,
+            source: source,
+            transform: .identity
+        )
+        updatePresenterSegment(id: segmentID) { $0.layers.append(layer) }
+        return layer.id
+    }
+
+    func deletePresenterSegmentLayer(segmentID: UUID, id: UUID) {
+        updatePresenterSegment(id: segmentID) { segment in
+            segment.layers.removeAll { $0.id == id }
+        }
+    }
+
+    func updatePresenterSegmentLayer(segmentID: UUID, id: UUID, mutation: (inout Layer) -> Void) {
+        updatePresenterSegment(id: segmentID) { segment in
+            guard let index = segment.layers.firstIndex(where: { $0.id == id }) else { return }
+            mutation(&segment.layers[index])
+        }
+    }
+
+    /// Move a cue layer through the render stack. `+1` brings it forward,
+    /// `-1` sends it back.
+    func movePresenterSegmentLayer(segmentID: UUID, id: UUID, by offset: Int) {
+        updatePresenterSegment(id: segmentID) { segment in
+            guard let index = segment.layers.firstIndex(where: { $0.id == id }) else { return }
+            let target = index + offset
+            guard segment.layers.indices.contains(target) else { return }
+            let layer = segment.layers.remove(at: index)
+            segment.layers.insert(layer, at: target)
+        }
+    }
+
+    /// Copy a cue layer to another segment, e.g. reusing a screen share across
+    /// a run of cues.
+    func copyPresenterSegmentLayer(from sourceSegmentID: UUID, layerID: UUID, to targetSegmentID: UUID) {
+        guard let layer = presenterSegment(id: sourceSegmentID)?
+            .layers.first(where: { $0.id == layerID }) else { return }
+        let copy = Layer(
+            name: layer.name,
+            source: layer.source,
+            transform: layer.transform,
+            filters: layer.filters,
+            blendMode: layer.blendMode,
+            opacity: layer.opacity,
+            isVisible: layer.isVisible,
+            isLocked: layer.isLocked,
+            cameraSettings: layer.cameraSettings,
+            placement: layer.placement
+        )
+        updatePresenterSegment(id: targetSegmentID) { $0.layers.append(copy) }
+    }
+
+    func presenterSegment(id: UUID) -> PresenterSegment? {
+        show.presenterRundown?.segments.first { $0.id == id }
+    }
+
     func setPresenterCameraID(_ deviceID: String?, for angle: PresenterCameraAngle) {
         guard var rundown = show.presenterRundown else { return }
         switch angle {
@@ -1305,6 +1367,11 @@ final class ShowStore: NSObject {
             .filter({ $0.placement == .background && $0.isVisible }) {
             layers.append(contentsOf: backgroundLayers)
         }
+
+        // Cue-owned layers placed behind the cue content (e.g. a backdrop that
+        // only exists in this cue).
+        layers.append(contentsOf: segment.layers
+            .filter { $0.placement == .background && $0.isVisible })
 
         switch segment.type {
         case .cameraGraphic:
@@ -1382,6 +1449,11 @@ final class ShowStore: NSObject {
                 transform: .identity
             ))
         }
+
+        // Cue-owned layers in front of the cue content — screen shares,
+        // picture inserts, one-off graphics.
+        layers.append(contentsOf: segment.layers
+            .filter { $0.placement == .foreground && $0.isVisible })
 
         // Global overlays (logo bugs, lower-thirds, etc.) appear on top of
         // every presenter segment.

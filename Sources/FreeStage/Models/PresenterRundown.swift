@@ -85,6 +85,11 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
     /// Primarily used for video packages.
     var autoFollow: Bool
     var notes: String
+    /// Layers that belong to this cue only, e.g. a screen share, a picture
+    /// insert, or a one-off graphic. Layers with `.background` placement are
+    /// composited behind the cue content, `.foreground` ones on top of it but
+    /// beneath the rundown's global foreground layers.
+    var layers: [Layer]
 
     /// Backward-compatible accessor for the original video URL.
     var mediaURL: URL? {
@@ -106,7 +111,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         chromaKeyFilter: ChromaKeyFilter? = nil,
         cameraSettings: CameraSettings? = nil,
         autoFollow: Bool = false,
-        notes: String = ""
+        notes: String = "",
+        layers: [Layer] = []
     ) {
         self.id = id
         self.name = name
@@ -118,11 +124,12 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         self.cameraSettings = cameraSettings
         self.autoFollow = autoFollow
         self.notes = notes
+        self.layers = layers
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, type, placeholderID, videoClip, cameraAngle
-        case chromaKeyFilter, cameraSettings, autoFollow, notes
+        case chromaKeyFilter, cameraSettings, autoFollow, notes, layers
         case mediaURL, duration
     }
 
@@ -137,6 +144,7 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         cameraSettings = try container.decodeIfPresent(CameraSettings.self, forKey: .cameraSettings)
         autoFollow = try container.decodeIfPresent(Bool.self, forKey: .autoFollow) ?? false
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        layers = try container.decodeIfPresent([Layer].self, forKey: .layers) ?? []
 
         if let clip = try container.decodeIfPresent(VideoClip.self, forKey: .videoClip) {
             videoClip = clip
@@ -161,6 +169,7 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         try container.encodeIfPresent(cameraSettings, forKey: .cameraSettings)
         try container.encode(autoFollow, forKey: .autoFollow)
         try container.encode(notes, forKey: .notes)
+        try container.encode(layers, forKey: .layers)
     }
 }
 

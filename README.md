@@ -22,6 +22,23 @@ Show
                  └── Blend Mode
 ```
 
+### Presenter rundown model
+
+```
+PresenterRundown
+ ├── Segments (ordered cues)
+ │    ├── Camera angle / chroma key / camera framing
+ │    ├── Placeholder reference (shared, named source slot)
+ │    └── Cue Layers (this cue only — screen share, image, video, NDI, Syphon, colour)
+ └── Global Layers (every cue — logo bug, backdrop, lower third)
+```
+
+A cue layer's **Placement** decides where it composites: `Background` sits behind
+the cue content (after the global background layers), `Foreground` sits above the
+cue content but beneath global foreground layers. Cue layers reach preview, live,
+recording, and streaming automatically because every surface renders the same
+`Scene` produced by `ShowStore.scene(for:)`.
+
 ## Status
 
 Early scaffold. The current target is a compilable SwiftUI app shell with the data model in place, so the architecture can grow incrementally.

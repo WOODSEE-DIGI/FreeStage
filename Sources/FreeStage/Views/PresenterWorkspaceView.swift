@@ -27,6 +27,12 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
+    @State private var selectedCueLayerID: UUID?
+    @State private var isPickingCueLayerImage = false
+    @State private var isPickingCueLayerVideo = false
+    @State private var isPickingCueScreen = false
+    @State private var isPickingCueNDI = false
+    @State private var isPickingCueSyphon = false
     private let iconStripWidth: CGFloat = 84
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
@@ -53,8 +59,25 @@ struct PresenterWorkspaceView: View {
     }
 
     private var requiredScreenIDs: Set<CGDirectDisplayID> {
-        // Presenter mode does not use screen-capture sources directly.
-        []
+        var ids = Set<CGDirectDisplayID>()
+        ids.formUnion(screenIDs(for: store.presenterActiveScene))
+        ids.formUnion(screenIDs(for: store.presenterLiveScene))
+        if let globalLayers = store.presenterRundown?.globalLayers {
+            ids.formUnion(screenIDs(in: globalLayers))
+        }
+        return ids
+    }
+
+    private func screenIDs(for scene: Scene?) -> Set<CGDirectDisplayID> {
+        guard let scene else { return [] }
+        return screenIDs(in: scene.layers)
+    }
+
+    private func screenIDs(in layers: [Layer]) -> Set<CGDirectDisplayID> {
+        Set(layers.compactMap { layer -> CGDirectDisplayID? in
+            if case .screen(let displayID) = layer.source { return displayID }
+            return nil
+        })
     }
 
     var body: some View {
@@ -90,8 +113,15 @@ struct PresenterWorkspaceView: View {
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture()
         }
+        .onChange(of: requiredScreenIDs) { _, _ in
+            updateScreenCapture()
+        }
+        .onChange(of: store.activeSegmentID) { _, _ in
+            selectedCueLayerID = nil
+        }
         .task {
             updateCameraCapture()
+            updateScreenCapture()
         }
         .onReceive(playbackTimer) { _ in
             playbackRefreshID = UUID()
@@ -162,6 +192,50 @@ struct PresenterWorkspaceView: View {
             let id = store.addPresenterGlobalLayer(source: .media(url: url))
             selectedGlobalLayerID = id
         }
+        .sheet(isPresented: $isPickingCueScreen) {
+            ScreenPickerSheet { display in
+                addCueLayer(source: .screen(displayID: display.displayID),
+                            name: "Screen \(display.displayID)")
+                screenCaptureManager?.startCapture(displayID: display.displayID)
+            }
+        }
+        .sheet(isPresented: $isPickingCueNDI) {
+            NDIPickerSheet { source in
+                addCueLayer(source: source, name: source.defaultName)
+            }
+        }
+        .sheet(isPresented: $isPickingCueSyphon) {
+            SyphonPickerSheet { source in
+                addCueLayer(source: source, name: source.defaultName)
+            }
+        }
+        .fileImporter(
+            isPresented: $isPickingCueLayerImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            addCueLayer(source: .image(url: url))
+        }
+        .fileImporter(
+            isPresented: $isPickingCueLayerVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            addCueLayer(source: .media(url: url))
+        }
+    }
+
+    private func addCueLayer(source: Source, name: String? = nil) {
+        guard let segmentID = store.activeSegmentID else { return }
+        selectedCueLayerID = store.addPresenterSegmentLayer(
+            segmentID: segmentID,
+            source: source,
+            name: name
+        )
     }
 
     // MARK: - Capture management
@@ -170,6 +244,10 @@ struct PresenterWorkspaceView: View {
         let ids = Array(requiredCameraIDs)
         print("[PresenterWorkspaceView] required camera IDs: \(ids)")
         cameraCaptureManager?.syncCaptures(requiredIDs: requiredCameraIDs)
+    }
+
+    private func updateScreenCapture() {
+        screenCaptureManager?.syncCaptures(requiredIDs: requiredScreenIDs)
     }
 
     private func cameraIDs(for scene: Scene?) -> Set<String> {
@@ -390,6 +468,8 @@ struct PresenterWorkspaceView: View {
             if segment.type == .videoPackage {
                 videoFileSection(for: segment)
             }
+
+            cueLayersSection(for: segment)
 
             Toggle("Auto-follow to next segment", isOn: autoFollowBinding(for: segment))
                 .foregroundStyle(theme.text)
@@ -904,6 +984,14 @@ struct PresenterWorkspaceView: View {
             }
             .padding(.horizontal)
 
+            Text("Named reusable source slots. A cue of type Title Card or Camera + Graphic shows the placeholder you pick in its editor — swap the placeholder's source here and every cue using it updates at once.")
+                .font(.caption2)
+                .foregroundStyle(theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal)
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+
             if let placeholders = store.presenterRundown?.placeholders, !placeholders.isEmpty {
                 List {
                     ForEach(placeholders) { placeholder in
@@ -1102,79 +1190,181 @@ struct PresenterWorkspaceView: View {
         case .image: return "photo"
         case .media, .mediaClip: return "film"
         case .color: return "paintpalette"
-        default: return "questionmark.square"
+        case .screen: return "display"
+        case .camera: return "video"
+        case .ndi: return "network"
+        case .syphon: return "app.connected.to.app.below.fill"
+        case .browser: return "safari"
+        case .slideshow: return "rectangle.stack"
+        case .text: return "textformat"
+        default: return "square.dashed"
         }
     }
 
     private func globalLayerEditor(_ layer: Layer) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Name", text: Binding(
-                get: { layer.name },
-                set: { newValue in
-                    store.updatePresenterGlobalLayer(id: layer.id) { $0.name = newValue }
+        layerEditorControls(Binding(
+            get: { store.presenterRundown?.globalLayers.first(where: { $0.id == layer.id }) ?? layer },
+            set: { newValue in
+                store.updatePresenterGlobalLayer(id: layer.id) { current in
+                    current = newValue
                 }
-            ))
-            .textFieldStyle(.roundedBorder)
-            .font(.caption)
+            }
+        ))
+    }
 
-            Picker("Placement", selection: Binding(
-                get: { layer.placement },
-                set: { newValue in
-                    store.updatePresenterGlobalLayer(id: layer.id) { $0.placement = newValue }
+    // MARK: - Cue (per-segment) layers
+
+    /// Layers that belong to this cue only — a screen share, a picture insert,
+    /// a one-off graphic. They are composited around the cue content and do not
+    /// carry over to other cues.
+    private func cueLayersSection(for segment: PresenterSegment) -> some View {
+        GroupBox("Cue Layers") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Layers shown only in this cue.")
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+
+                HStack {
+                    Text("\(segment.layers.count) layer\(segment.layers.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryText)
+                    Spacer()
+                    Menu {
+                        Button("Screen Share…") { isPickingCueScreen = true }
+                        Button("Image…") { isPickingCueLayerImage = true }
+                        Button("Video…") { isPickingCueLayerVideo = true }
+                        Button("NDI…") { isPickingCueNDI = true }
+                        Button("Syphon…") { isPickingCueSyphon = true }
+                        Divider()
+                        Button("Color") {
+                            selectedCueLayerID = store.addPresenterSegmentLayer(
+                                segmentID: segment.id,
+                                source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 0.6)),
+                                name: "Color"
+                            )
+                        }
+                    } label: {
+                        Label("Add Layer", systemImage: "plus")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Add a layer that only appears in this cue")
                 }
-            )) {
+
+                if segment.layers.isEmpty {
+                    Text("No cue layers yet.")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(segment.layers) { layer in
+                        cueLayerRow(layer, segment: segment)
+                    }
+                }
+
+                if let layer = segment.layers.first(where: { $0.id == selectedCueLayerID }) {
+                    Divider()
+                    layerEditorControls(Binding(
+                        get: { store.presenterSegment(id: segment.id)?
+                            .layers.first(where: { $0.id == layer.id }) ?? layer },
+                        set: { newValue in
+                            store.updatePresenterSegmentLayer(segmentID: segment.id, id: layer.id) { current in
+                                current = newValue
+                            }
+                        }
+                    ))
+                    .padding(.top, 4)
+                    .background(theme.background.opacity(0.5))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func cueLayerRow(_ layer: Layer, segment: PresenterSegment) -> some View {
+        let isSelected = selectedCueLayerID == layer.id
+        return HStack(spacing: 6) {
+            Image(systemName: iconName(for: layer.source))
+                .foregroundStyle(theme.accent)
+                .frame(width: 16)
+            Text(layer.name)
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+            Spacer()
+            Text(layer.placement == .background ? "BG" : "FG")
+                .font(.caption2.bold())
+                .foregroundStyle(theme.secondaryText)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(theme.secondaryText.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            Button {
+                store.updatePresenterSegmentLayer(segmentID: segment.id, id: layer.id) { $0.isVisible.toggle() }
+            } label: {
+                Image(systemName: layer.isVisible ? "eye" : "eye.slash")
+            }
+            .buttonStyle(.borderless)
+            .help(layer.isVisible ? "Hide in this cue" : "Show in this cue")
+            Button {
+                store.deletePresenterSegmentLayer(segmentID: segment.id, id: layer.id)
+                if selectedCueLayerID == layer.id { selectedCueLayerID = nil }
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("Remove this layer from the cue")
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { selectedCueLayerID = layer.id }
+        .background(isSelected ? theme.selected.opacity(0.15) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    /// Shared layer controls used by both global and cue layers.
+    private func layerEditorControls(_ binding: Binding<Layer>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Name", text: binding.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+
+            Picker("Placement", selection: binding.placement) {
                 Text("Background").tag(Layer.Placement.background)
                 Text("Foreground").tag(Layer.Placement.foreground)
             }
             .pickerStyle(.segmented)
             .font(.caption)
+            .help("Background renders behind the cue content, foreground on top of it.")
 
             HStack {
                 Text("X")
                     .frame(width: 16)
-                Slider(value: Binding(
-                    get: { layer.transform.x },
-                    set: { newValue in
-                        store.updatePresenterGlobalLayer(id: layer.id) { $0.transform.x = newValue }
-                    }
-                ), in: 0...1)
+                Slider(value: binding.transform.x, in: 0...1)
             }
             HStack {
                 Text("Y")
                     .frame(width: 16)
-                Slider(value: Binding(
-                    get: { layer.transform.y },
-                    set: { newValue in
-                        store.updatePresenterGlobalLayer(id: layer.id) { $0.transform.y = newValue }
-                    }
-                ), in: 0...1)
+                Slider(value: binding.transform.y, in: 0...1)
             }
             HStack {
                 Text("Size")
                     .frame(width: 28)
                 Slider(value: Binding(
-                    get: { layer.transform.scaleX },
+                    get: { binding.wrappedValue.transform.scaleX },
                     set: { newValue in
-                        store.updatePresenterGlobalLayer(id: layer.id) {
-                            $0.transform.scaleX = newValue
-                            $0.transform.scaleY = newValue
-                        }
+                        binding.wrappedValue.transform.scaleX = newValue
+                        binding.wrappedValue.transform.scaleY = newValue
                     }
                 ), in: 0.1...3)
             }
             HStack {
                 Text("Opacity")
                     .frame(width: 44)
-                Slider(value: Binding(
-                    get: { layer.opacity },
-                    set: { newValue in
-                        store.updatePresenterGlobalLayer(id: layer.id) { $0.opacity = newValue }
-                    }
-                ), in: 0...1)
+                Slider(value: binding.opacity, in: 0...1)
             }
         }
-        .padding()
-        .background(theme.background.opacity(0.5))
     }
 
     private func cameraPicker(angle: PresenterCameraAngle, label: String) -> some View {
