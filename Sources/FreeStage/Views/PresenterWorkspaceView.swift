@@ -517,6 +517,36 @@ struct PresenterWorkspaceView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                HStack {
+                    Text("Edge Feather")
+                    Slider(value: binding.edgeFeather, in: 0...0.5)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Text("Edge Despill")
+                    Slider(value: binding.edgeDespill, in: 0...2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Text("Spill Suppression")
+                    Slider(value: binding.spillSuppression, in: 0...2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Text("Spill Range")
+                    Slider(value: binding.spillRange, in: 0...1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Text("Skin Tone Protection")
+                    Slider(value: binding.skinToneProtection, in: 0...1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 chromaKeyBackgroundSection(for: segment)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

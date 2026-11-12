@@ -79,7 +79,7 @@
             <ul>
                 <li><strong>Camera Framing</strong> — software zoom and pan so you can crop or re-frame the shot per segment without touching the physical camera.</li>
                 <li><strong>Gimbal</strong> — pan/tilt target angles and a <strong>Send to Gimbal</strong> toggle. When the toggle is on, the angle is sent to a connected OBSBOT gimbal each time the segment goes live (or immediately while you drag the sliders).</li>
-                <li><strong>Chroma Key</strong> — enable the key, pick a preset (green/blue/custom), adjust hue, threshold, and smoothing, and choose a background image or video to composite behind the keyed subject.</li>
+                <li><strong>Chroma Key</strong> — enable the key, pick a preset (green/blue/custom), adjust hue, threshold, smoothing, edge feather, edge despill, spill suppression/range, and skin-tone protection, and choose a background image or video to composite behind the keyed subject.</li>
                 <li><strong>Expandable Editor</strong> — click the expand arrow on the selected segment to collapse the rundown into a narrow icon strip and give the segment controls the full left-column height. Click the close button to return to the normal rundown view.</li>
             </ul>
             <p>Click <strong>Open Clip Editor</strong> on a Video Package to scrub the video, mark <strong>In</strong> and <strong>Out</strong> points, and export a trimmed <strong>Subclip</strong>. The timeline shows green and red markers for the In and Out points and highlights the trimmed range. Playback always respects the In/Out range, even before a subclip is exported — exporting is only needed if you want a separate trimmed file on disk. If the source bitrate is high (above 8 Mbps), FreeStage automatically generates a lower-resolution proxy for smooth scrubbing; you can also manually regenerate the proxy at any time.</p>
@@ -287,9 +287,10 @@
                 <li><strong>Enable:</strong> turn on the main Chroma Key switch in the layer inspector. If the green screen stays visible, check that the switch is on and the A/B bypass is off.</li>
                 <li><strong>Key Colors:</strong> add up to four sampled colors to handle highlights and shadows across an uneven screen.</li>
                 <li><strong>A / B Bypass:</strong> toggle the bypass switch to temporarily disable the key and compare against the original source.</li>
+                <li><strong>Edge Feather:</strong> softens the transition between kept and keyed-out pixels.</li>
                 <li><strong>Edge Despill:</strong> boosts spill suppression exactly where the foreground meets the keyed background.</li>
                 <li><strong>Spill Suppression / Range:</strong> removes green/blue reflection from foreground edges and skin tones.</li>
-                <li><strong>Skin Protect:</strong> preserves warm skin-tone hues while still despilling nearby green.</li>
+                <li><strong>Skin Tone Protection:</strong> preserves warm skin-tone hues while still despilling nearby green.</li>
                 <li><strong>Background:</strong> choose an image or video to composite behind the keyed layer, or leave it transparent.</li>
             </ul>
         </section>
