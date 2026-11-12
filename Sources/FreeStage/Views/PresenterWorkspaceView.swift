@@ -27,19 +27,7 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    @State private var leftColumnWidth: CGFloat = 460
-    @State private var rundownColumnWidth: CGFloat = 220
-    @State private var rightColumnWidth: CGFloat = 240
     private let iconStripWidth: CGFloat = 44
-    private let leftExpandedMin: CGFloat = 400
-    private let leftExpandedMax: CGFloat = 700
-    private let rundownMin: CGFloat = 180
-    private let rundownMax: CGFloat = 400
-    private let rightMin: CGFloat = 200
-    private let rightMax: CGFloat = 450
-    private let centreMin: CGFloat = 240
-    private let dividerThickness: CGFloat = 14
-    private let monitorAspectRatio: CGFloat = 16 / 9
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -78,65 +66,17 @@ struct PresenterWorkspaceView: View {
                 headerBar
                     .padding(.horizontal)
 
-                GeometryReader { geometry in
-                    let (leftWidth, rightWidth, centerWidth) = columnWidths(
-                        totalWidth: geometry.size.width,
-                        totalHeight: geometry.size.height
-                    )
-
-                    // The dividers are rendered in a separate overlay layer so
-                    // they sit above the live/preview MetalCanvasViews and the
-                    // left List, guaranteeing they receive mouse events.
-                    ZStack {
-                        HStack(spacing: 0) {
-                            leftPanel(totalWidth: leftWidth)
-                                .frame(minWidth: leftWidth, maxWidth: leftWidth)
-
-                            Color.clear
-                                .frame(width: dividerThickness)
-
-                            VStack(spacing: 12) {
-                                liveMonitor
-                                previewMonitor
-                            }
-                            .frame(minWidth: centreMin, maxWidth: centerWidth)
-
-                            Color.clear
-                                .frame(width: dividerThickness)
-
-                            placeholderPanel
-                                .frame(minWidth: rightWidth, maxWidth: rightWidth)
+                PresenterSplitView(
+                    isSegmentEditorExpanded: isSegmentEditorExpanded,
+                    leftContent: AnyView(leftPanel),
+                    centreContent: AnyView(
+                        VStack(spacing: 12) {
+                            liveMonitor
+                            previewMonitor
                         }
-
-                        // Divider 1: between rundown/editor and live/preview.
-                        DragDivider { delta in
-                            if isSegmentEditorExpanded {
-                                let newLeft = leftColumnWidth + delta
-                                leftColumnWidth = min(max(newLeft, leftExpandedMin), leftExpandedMax)
-                            } else {
-                                let newLeft = rundownColumnWidth + delta
-                                rundownColumnWidth = min(max(newLeft, rundownMin), rundownMax)
-                            }
-                        }
-                        .frame(width: dividerThickness)
-                        .position(
-                            x: leftWidth + dividerThickness / 2,
-                            y: geometry.size.height / 2
-                        )
-
-                        // Divider 2: between live/preview and Show Setup.
-                        DragDivider { delta in
-                            let newRight = rightColumnWidth - delta
-                            rightColumnWidth = min(max(newRight, rightMin), rightMax)
-                        }
-                        .frame(width: dividerThickness)
-                        .position(
-                            x: leftWidth + dividerThickness + centerWidth + dividerThickness / 2,
-                            y: geometry.size.height / 2
-                        )
-                    }
-                    .transaction { $0.animation = nil }
-                }
+                    ),
+                    rightContent: AnyView(placeholderPanel)
+                )
                 .padding(.horizontal)
 
                 transportBar
@@ -257,54 +197,6 @@ struct PresenterWorkspaceView: View {
 
     // MARK: - Layout sizing
 
-    /// Computes the three column widths for the presenter workspace.
-    ///
-    /// The centre column defaults to the ideal 16:9 width for the available
-    /// height so the monitors fill it without pillarboxing. When a divider is
-    /// dragged, the adjacent columns resize like a standard split view: the
-    /// dragged divider follows the cursor and the centre column can grow or
-    /// shrink. Any leftover horizontal space at the default size is given to
-    /// the editor/left column first. If the window is too narrow to fit the
-    /// desired side widths and the minimum centre width, the side columns
-    /// shrink proportionally.
-    private func columnWidths(totalWidth: CGFloat, totalHeight: CGFloat) -> (left: CGFloat, right: CGFloat, center: CGFloat) {
-        // Size the centre column so the 16:9 monitors fit exactly
-        // without pillarboxing. Each monitor has a header (~32 pt)
-        // and footer (~28 pt) plus 12 pt spacing between them.
-        let monitorChrome: CGFloat = 32 + 28
-        let availableMonitorHeight = (totalHeight - monitorChrome * 2 - 12) / 2
-        let idealCenterWidth = max(centreMin, availableMonitorHeight * monitorAspectRatio)
-
-        let desiredLeftWidth = isSegmentEditorExpanded
-            ? min(max(leftExpandedMin, leftColumnWidth), leftExpandedMax)
-            : min(max(rundownMin, rundownColumnWidth), rundownMax)
-        let desiredRightWidth = min(max(rightMin, rightColumnWidth), rightMax)
-
-        // Standard split view: centre fills the remaining width after left,
-        // right, and the two dividers are accounted for.
-        var centerWidth = totalWidth - desiredLeftWidth - desiredRightWidth - dividerThickness * 2
-
-        // If the window is too narrow, scale the side columns proportionally
-        // so the centre never shrinks below its minimum.
-        if centerWidth < centreMin {
-            let scale = (totalWidth - dividerThickness * 2 - centreMin) / (desiredLeftWidth + desiredRightWidth)
-            let leftWidth = max(isSegmentEditorExpanded ? leftExpandedMin : rundownMin, desiredLeftWidth * scale)
-            let rightWidth = max(rightMin, desiredRightWidth * scale)
-            centerWidth = totalWidth - leftWidth - rightWidth - dividerThickness * 2
-            return (leftWidth, rightWidth, max(centreMin, centerWidth))
-        }
-
-        // At the default size, keep the centre at its ideal monitor width and
-        // give any leftover horizontal space to the editor/left column so the
-        // monitors do not pillarbox.
-        if centerWidth > idealCenterWidth {
-            let leftover = centerWidth - idealCenterWidth
-            return (desiredLeftWidth + leftover, desiredRightWidth, idealCenterWidth)
-        }
-
-        return (desiredLeftWidth, desiredRightWidth, centerWidth)
-    }
-
     // MARK: - Header
 
     private var headerBar: some View {
@@ -324,20 +216,24 @@ struct PresenterWorkspaceView: View {
     // MARK: - Left panel (rundown + segment editor)
 
     /// Left column: full rundown list when collapsed, icon strip + expanded
-    /// editor when expanded. Width is controlled by the parent so it can be
-    /// resized with the draggable divider.
-    private func leftPanel(totalWidth: CGFloat) -> some View {
-        let editorWidth = max(0, totalWidth - iconStripWidth - 1)
-        return HStack(spacing: 0) {
-            if isSegmentEditorExpanded, let segment = store.activeSegment {
-                iconRundown
-                    .frame(width: iconStripWidth)
-                Divider()
-                expandedSegmentEditor(segment)
-                    .frame(minWidth: editorWidth, maxWidth: editorWidth, maxHeight: .infinity)
-            } else {
-                expandedRundownList
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// editor when expanded. The GeometryReader measures the actual width
+    /// allocated by the split view so the editor can be pinned without the
+    /// ScrollView creating a layout feedback loop.
+    private var leftPanel: some View {
+        GeometryReader { geometry in
+            let totalWidth = geometry.size.width
+            let editorWidth = max(0, totalWidth - iconStripWidth - 1)
+            HStack(spacing: 0) {
+                if isSegmentEditorExpanded, let segment = store.activeSegment {
+                    iconRundown
+                        .frame(width: iconStripWidth)
+                    Divider()
+                    expandedSegmentEditor(segment)
+                        .frame(minWidth: editorWidth, maxWidth: editorWidth, maxHeight: .infinity)
+                } else {
+                    expandedRundownList
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .background(theme.panelBackground)
