@@ -35,6 +35,35 @@ xcodegen generate
 xcodebuild -project FreeStage.xcodeproj -scheme FreeStage -configuration Debug -destination 'platform=macOS' build
 ```
 
+## Package a DMG
+
+```bash
+scripts/build-dmg.sh
+```
+
+The script regenerates the project, builds the Release configuration into
+`build/DerivedData`, re-signs the app (ad-hoc by default) so the bundle is
+sealed and carries the entitlements from `Resources/FreeStage.entitlements`,
+then writes a drag-to-install `build/FreeStage-<version>.dmg` containing
+`FreeStage.app` and an `Applications` symlink. It prints the version, size and
+SHA-256 of the result.
+
+Overridable environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CONFIGURATION` | `Release` | Build configuration |
+| `DIST_DIR` | `./build` | Where the DMG is written |
+| `DERIVED_DATA_DIR` | `./build/DerivedData` | Derived data location |
+| `SIGN_IDENTITY` | `-` (ad-hoc) | Codesign identity; a Developer ID keeps restricted entitlements |
+
+The build is not notarised, so the first launch on another Mac needs the usual
+Gatekeeper override:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/FreeStage.app
+```
+
 ## License
 
 TBD.
