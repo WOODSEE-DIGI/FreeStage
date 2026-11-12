@@ -10,6 +10,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import UniformTypeIdentifiers
 
 struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
@@ -21,6 +22,7 @@ struct PresenterWorkspaceView: View {
     @State private var editingSegmentID: UUID?
     @State private var isSegmentEditorExpanded = false
     @State private var playbackRefreshID = UUID()
+    @State private var isPickingChromaBackground = false
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -96,6 +98,27 @@ struct PresenterWorkspaceView: View {
             if let segmentID = editingSegmentID, let binding = clipBinding(for: segmentID) {
                 VideoClipEditorView(clip: binding)
                     .frame(minWidth: 820, minHeight: 600)
+            }
+        }
+        .fileImporter(
+            isPresented: $isPickingChromaBackground,
+            allowedContentTypes: [.image, .movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first,
+                  let segmentID = store.activeSegmentID else { return }
+            let source: Source
+            if let type = UTType(filenameExtension: url.pathExtension),
+               type.conforms(to: .image) {
+                source = .image(url: url)
+            } else {
+                source = .media(url: url)
+            }
+            store.updatePresenterSegment(id: segmentID) { segment in
+                var filter = segment.chromaKeyFilter ?? ChromaKeyFilter(isEnabled: true)
+                filter.backgroundSource = source
+                segment.chromaKeyFilter = filter
             }
         }
     }
@@ -431,8 +454,62 @@ struct PresenterWorkspaceView: View {
                     Text("Smoothing")
                     Slider(value: binding.smoothing, in: 0...1)
                 }
+
+                chromaKeyBackgroundSection(for: segment)
             }
         }
+    }
+
+    private func chromaKeyBackgroundSection(for segment: PresenterSegment) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Background")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+
+            if let source = segment.chromaKeyFilter?.backgroundSource {
+                HStack {
+                    Text(source.defaultName)
+                        .font(.caption)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Clear") {
+                        store.updatePresenterSegment(id: segment.id) { segment in
+                            segment.chromaKeyFilter?.backgroundSource = nil
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                }
+
+                HStack {
+                    Text("Zoom")
+                    Slider(
+                        value: Binding(
+                            get: { segment.chromaKeyFilter?.backgroundTransform.scaleX ?? 1 },
+                            set: { newValue in
+                                store.updatePresenterSegment(id: segment.id) { segment in
+                                    segment.chromaKeyFilter?.backgroundTransform.scaleX = newValue
+                                    segment.chromaKeyFilter?.backgroundTransform.scaleY = newValue
+                                }
+                            }
+                        ),
+                        in: 0.1...5
+                    )
+                }
+            } else {
+                Button {
+                    isPickingChromaBackground = true
+                } label: {
+                    Label("Choose Image/Video…", systemImage: "photo")
+                }
+                .font(.caption)
+            }
+
+            Text("When no background is chosen, the keyed area is transparent.")
+                .font(.caption2)
+                .foregroundStyle(theme.secondaryText)
+        }
+        .padding(.top, 4)
     }
 
     private func cameraSettingsBinding(for segment: PresenterSegment) -> Binding<CameraSettings> {
