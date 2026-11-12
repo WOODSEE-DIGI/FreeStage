@@ -27,6 +27,9 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
+    @State private var rightColumnWidth: CGFloat = 260
+    @State private var editorContentWidth: CGFloat = 380
+    private let iconStripWidth: CGFloat = 44
     private let playbackTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -65,8 +68,15 @@ struct PresenterWorkspaceView: View {
                 headerBar
                     .padding(.horizontal)
 
-                HStack(spacing: 16) {
+                HStack(spacing: 0) {
                     leftPanel
+                        .frame(width: isSegmentEditorExpanded ? iconStripWidth + editorContentWidth : 260)
+
+                    ResizableDivider(
+                        width: isSegmentEditorExpanded ? $editorContentWidth : .constant(260),
+                        minWidth: 300,
+                        maxWidth: 520
+                    )
 
                     VStack(spacing: 12) {
                         liveMonitor
@@ -74,8 +84,14 @@ struct PresenterWorkspaceView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                    ResizableDivider(
+                        width: $rightColumnWidth,
+                        minWidth: 220,
+                        maxWidth: 450
+                    )
+
                     placeholderPanel
-                        .frame(minWidth: 260, idealWidth: 300)
+                        .frame(width: rightColumnWidth)
                 }
                 .padding(.horizontal)
 
@@ -211,23 +227,21 @@ struct PresenterWorkspaceView: View {
 
     // MARK: - Left panel (rundown + segment editor)
 
-    /// Fixed-width container that swaps between the full rundown list and the
-    /// icon-only strip + expanded editor. The explicit width prevents the
-    /// flickering/bouncing caused by minWidth/idealWidth competing with the
-    /// centre monitors and right-hand setup panel.
+    /// Left column: full rundown list when collapsed, icon strip + expanded
+    /// editor when expanded. Width is controlled by the parent so it can be
+    /// resized with the draggable divider.
     private var leftPanel: some View {
         HStack(spacing: 0) {
             if isSegmentEditorExpanded, let segment = store.activeSegment {
                 iconRundown
                 Divider()
                 expandedSegmentEditor(segment)
-                    .frame(width: 300)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 expandedRundownList
-                    .frame(width: 260)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: isSegmentEditorExpanded ? 344 : 260)
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
@@ -400,9 +414,8 @@ struct PresenterWorkspaceView: View {
 
             ScrollView {
                 segmentEditorBody(segment)
-                    .frame(width: 268)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
             }
         }
     }
