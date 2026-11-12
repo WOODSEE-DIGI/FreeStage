@@ -66,18 +66,18 @@ struct PresenterWorkspaceView: View {
                 headerBar
                     .padding(.horizontal)
 
-                HSplitView {
+                HStack(spacing: 16) {
                     leftPanel
-                        .frame(minWidth: 360, idealWidth: 420, maxWidth: 600)
+                        .frame(width: isSegmentEditorExpanded ? 420 : 260)
 
                     VStack(spacing: 12) {
                         liveMonitor
                         previewMonitor
                     }
-                    .frame(minWidth: 400, idealWidth: 700, maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     placeholderPanel
-                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 450)
+                        .frame(width: 280)
                 }
                 .padding(.horizontal)
 
