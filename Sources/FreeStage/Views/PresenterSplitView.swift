@@ -37,6 +37,12 @@ struct PresenterSplitView: NSViewRepresentable {
         splitView.addArrangedSubview(centreHC.view)
         splitView.addArrangedSubview(rightHC.view)
 
+        // Keep the side panels stable when the window resizes; let the centre
+        // monitors absorb the extra width.
+        splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
+        splitView.setHoldingPriority(.defaultLow, forSubviewAt: 1)
+        splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 2)
+
         context.coordinator.hostingControllers = [leftHC, centreHC, rightHC]
         context.coordinator.splitView = splitView
         context.coordinator.isSegmentEditorExpanded = isSegmentEditorExpanded
@@ -54,9 +60,16 @@ struct PresenterSplitView: NSViewRepresentable {
 
         // When the user toggles between the rundown list and the expanded
         // editor, snap the divider to the appropriate default width so the
-        // editor tools are not jumbled on first open.
+        // editor tools are not jumbled on first open. Defer until after the
+        // current SwiftUI/AppKit layout pass; setting positions while the
+        // hosting controllers are still resizing can collapse the side panels.
         if expandedChanged {
-            context.coordinator.applyDefaultPositions(in: nsView, animated: false)
+            context.coordinator.hasSetInitialPositions = false
+            DispatchQueue.main.async {
+                if context.coordinator.applyDefaultPositions(in: nsView, animated: true) {
+                    context.coordinator.hasSetInitialPositions = true
+                }
+            }
         }
     }
 
@@ -102,26 +115,39 @@ struct PresenterSplitView: NSViewRepresentable {
         /// Snap divider 0 and divider 1 to the widths that match the current
         /// editor/list mode. Called on first layout and whenever expand/collapse
         /// toggles, so the tools panel opens wide enough and the monitors stay
-        /// usable.
-        func applyDefaultPositions(in splitView: NSSplitView, animated: Bool) {
-            guard splitView.subviews.count == 3 else { return }
+        /// usable. Returns false when the split view is still too small to
+        /// honour the defaults, so the caller can retry on the next layout pass.
+        @discardableResult
+        func applyDefaultPositions(in splitView: NSSplitView, animated: Bool) -> Bool {
+            guard splitView.subviews.count == 3 else { return false }
             let total = splitView.bounds.width
-            guard total > 0 else { return }
-
+            let dividerThickness = splitView.dividerThickness
             let leftDefault: CGFloat = isSegmentEditorExpanded ? 640 : 240
             let rightDefault: CGFloat = 240
-            let dividerThickness = splitView.dividerThickness
+
+            // Never set positions that would push a divider off-screen. On the
+            // very first layout pass the split view can still be 1 pt wide;
+            // applying the defaults then collapses the side panels permanently.
+            let minimumTotal = leftDefault + rightDefault + centreMin + dividerThickness * 2
+            guard total >= minimumTotal else { return false }
+
+            let leftPosition = min(leftDefault, total - rightDefault - centreMin - dividerThickness * 2)
+            let rightPosition = max(
+                leftPosition + centreMin + dividerThickness,
+                total - rightDefault - dividerThickness
+            )
 
             if animated {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.15
-                    splitView.animator().setPosition(leftDefault, ofDividerAt: 0)
-                    splitView.animator().setPosition(total - rightDefault - dividerThickness, ofDividerAt: 1)
+                    splitView.animator().setPosition(leftPosition, ofDividerAt: 0)
+                    splitView.animator().setPosition(rightPosition, ofDividerAt: 1)
                 }
             } else {
-                splitView.setPosition(leftDefault, ofDividerAt: 0)
-                splitView.setPosition(total - rightDefault - dividerThickness, ofDividerAt: 1)
+                splitView.setPosition(leftPosition, ofDividerAt: 0)
+                splitView.setPosition(rightPosition, ofDividerAt: 1)
             }
+            return true
         }
 
         func splitViewDidResizeSubviews(_ notification: Notification) {
@@ -129,8 +155,9 @@ struct PresenterSplitView: NSViewRepresentable {
                   splitView.subviews.count == 3,
                   !hasSetInitialPositions else { return }
 
-            hasSetInitialPositions = true
-            applyDefaultPositions(in: splitView, animated: false)
+            if applyDefaultPositions(in: splitView, animated: false) {
+                hasSetInitialPositions = true
+            }
         }
     }
 }
