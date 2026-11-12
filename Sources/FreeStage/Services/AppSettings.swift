@@ -330,8 +330,11 @@ final class AppSettings: @unchecked Sendable {
 
     /// Add or move a show to the front of the recent-shows list, keeping a
     /// security-scoped bookmark so sandboxed access survives relaunches.
-    func addRecentShow(url: URL) {
-        let bookmark = SecurityScopedBookmark.create(for: url)
+    /// Pass an explicit bookmark when the URL is currently being accessed
+    /// inside a security scope (creating a bookmark after access stops will
+    /// silently fail in the sandbox).
+    func addRecentShow(url: URL, bookmarkData: Data? = nil) {
+        let bookmark = bookmarkData ?? SecurityScopedBookmark.create(for: url)
         let entry = RecentShow(url: url, bookmarkData: bookmark)
         var recents = recentShows.filter { $0.id != entry.id }
         recents.insert(entry, at: 0)

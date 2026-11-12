@@ -144,11 +144,13 @@ struct ProjectManagerView: View {
 
     private func loadShow(from url: URL) {
         do {
-            let show = try accessSecurityScopedResource(url: url) {
-                try ShowPackage.read(from: url)
+            let (show, bookmark) = try accessSecurityScopedResource(url: url) {
+                let bookmark = SecurityScopedBookmark.create(for: url)
+                let show = try ShowPackage.read(from: url)
+                return (show, bookmark)
             }
             store.load(show: show)
-            settings.addRecentShow(url: url)
+            settings.addRecentShow(url: url, bookmarkData: bookmark)
             isPresented = false
         } catch {
             presentError(error.localizedDescription)
