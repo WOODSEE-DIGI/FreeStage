@@ -38,11 +38,15 @@ final class DragDividerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Begin tracking; subsequent mouseDragged events report deltas.
+        window?.makeFirstResponder(self)
     }
 
     override func mouseDragged(with event: NSEvent) {
         onDrag?(CGFloat(event.deltaX))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        window?.makeFirstResponder(nil)
     }
 
     override func mouseEntered(with event: NSEvent) {

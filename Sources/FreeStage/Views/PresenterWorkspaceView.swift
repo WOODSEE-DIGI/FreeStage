@@ -27,15 +27,16 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    @State private var leftColumnWidth: CGFloat = 380
+    @State private var leftColumnWidth: CGFloat = 460
     @State private var rightColumnWidth: CGFloat = 240
     private let iconStripWidth: CGFloat = 44
-    private let leftExpandedMin: CGFloat = 340
-    private let leftExpandedMax: CGFloat = 600
+    private let leftExpandedMin: CGFloat = 400
+    private let leftExpandedMax: CGFloat = 700
     private let rightMin: CGFloat = 200
     private let rightMax: CGFloat = 450
     private let centreMin: CGFloat = 240
     private let dividerThickness: CGFloat = 14
+    private let monitorAspectRatio: CGFloat = 16 / 9
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -75,10 +76,10 @@ struct PresenterWorkspaceView: View {
                     .padding(.horizontal)
 
                 GeometryReader { geometry in
-                    let totalWidth = geometry.size.width
-                    let leftWidth = isSegmentEditorExpanded ? max(leftExpandedMin, leftColumnWidth) : 220
-                    let rightWidth = max(rightMin, rightColumnWidth)
-                    let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
+                    let (leftWidth, rightWidth, centerWidth) = columnWidths(
+                        totalWidth: geometry.size.width,
+                        totalHeight: geometry.size.height
+                    )
 
                     HStack(spacing: 0) {
                         leftPanel(totalWidth: leftWidth)
@@ -106,7 +107,7 @@ struct PresenterWorkspaceView: View {
                         placeholderPanel
                             .frame(minWidth: rightWidth, maxWidth: rightWidth)
                     }
-                    .animation(.none, value: isSegmentEditorExpanded)
+                    .transaction { $0.animation = nil }
                 }
                 .padding(.horizontal)
 
@@ -224,6 +225,49 @@ struct PresenterWorkspaceView: View {
                 store.updatePresenterSegment(id: segmentID) { $0.videoClip = newClip }
             }
         )
+    }
+
+    // MARK: - Layout sizing
+
+    /// Computes the three column widths for the presenter workspace.
+    ///
+    /// The centre column is sized so the 16:9 monitors fit exactly without
+    /// pillarboxing, then any leftover horizontal space is given to the editor
+    /// when it is expanded. Only when the window is too narrow to honour both
+    /// desired side widths do the left/right columns shrink proportionally.
+    private func columnWidths(totalWidth: CGFloat, totalHeight: CGFloat) -> (left: CGFloat, right: CGFloat, center: CGFloat) {
+        // Size the centre column so the 16:9 monitors fit exactly
+        // without pillarboxing. Each monitor has a header (~32 pt)
+        // and footer (~28 pt) plus 12 pt spacing between them.
+        let monitorChrome: CGFloat = 32 + 28
+        let availableMonitorHeight = (totalHeight - monitorChrome * 2 - 12) / 2
+        let idealCenterWidth = max(centreMin, availableMonitorHeight * monitorAspectRatio)
+
+        let desiredLeftWidth = isSegmentEditorExpanded
+            ? min(max(leftExpandedMin, leftColumnWidth), leftExpandedMax)
+            : 220
+        let desiredRightWidth = max(rightMin, rightColumnWidth)
+
+        // Keep the centre at its ideal monitor width. Distribute
+        // any leftover horizontal space to the editor first; shrink
+        // left/right proportionally only when the window is too
+        // narrow to honour both desired widths.
+        let sideBudget = max(0, totalWidth - idealCenterWidth - dividerThickness * 2)
+        let desiredSideTotal = desiredLeftWidth + desiredRightWidth
+
+        if desiredSideTotal <= sideBudget {
+            let leftover = sideBudget - desiredSideTotal
+            let leftWidth = desiredLeftWidth + leftover
+            let rightWidth = desiredRightWidth
+            let centerWidth = idealCenterWidth
+            return (leftWidth, rightWidth, centerWidth)
+        } else {
+            let scale = sideBudget / desiredSideTotal
+            let leftWidth = max(isSegmentEditorExpanded ? leftExpandedMin : 220, desiredLeftWidth * scale)
+            let rightWidth = max(rightMin, desiredRightWidth * scale)
+            let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
+            return (leftWidth, rightWidth, centerWidth)
+        }
     }
 
     // MARK: - Header
