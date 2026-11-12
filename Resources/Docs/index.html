@@ -97,9 +97,9 @@
             <ul>
                 <li><strong>X / Y</strong> — move the layer center around the canvas (0–1, normalized).</li>
                 <li><strong>Size</strong> — scale the layer uniformly. This is the quickest way to zoom a source in or out.</li>
-                <li><strong>Width / Height</strong> — scale each axis independently. Use these to stretch or fit a source to a non-standard frame.</li>
+                <li><strong>Width / Height</strong> — scale each axis independently. For image, video, slideshow, NDI, Syphon, and browser sources these act as a bounding box and the source is <strong>aspect-fitted</strong> inside it so it is never stretched.</li>
                 <li><strong>Opacity</strong> — fade the layer.</li>
-                <li><strong>Fit to Canvas</strong> — reset position and scale to fill the output.</li>
+                <li><strong>Fit to Canvas</strong> — reset position and scale to fill the output. Aspect-ratio sources are still fitted, not stretched.</li>
             </ul>
         </section>
 

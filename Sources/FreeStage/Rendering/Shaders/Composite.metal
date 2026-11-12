@@ -18,8 +18,9 @@ struct LayerParams {
     float2 scale;
     /// Layer opacity.
     float opacity;
-    /// Padding to keep the struct 16-byte aligned.
-    float pad;
+    /// 1.0 to aspect-fit the source texture inside the layer rectangle,
+    /// 0.0 to stretch it to fill the rectangle.
+    float preserveAspect;
 };
 
 struct FilterParams {
@@ -244,7 +245,29 @@ kernel void compositeLayer(
     float2 outputSize = float2(output.get_width(), output.get_height());
     float2 outputUV = float2(gid) / outputSize;
 
-    float2 sourceUV = (outputUV - params.position) / params.scale + 0.5;
+    float2 sourceSize = float2(source.get_width(), source.get_height());
+
+    // Aspect-fit the source into the layer rectangle when requested. The
+    // layer's scale becomes a bounding box and the image is letter- or
+    // pillar-boxed inside it instead of being stretched.
+    float2 displayScale = params.scale;
+    if (params.preserveAspect > 0.5 && sourceSize.y > 0.0) {
+        float layerAspect = params.scale.x * outputSize.x / max(params.scale.y * outputSize.y, 0.0001);
+        float sourceAspect = sourceSize.x / sourceSize.y;
+        if (sourceAspect > layerAspect) {
+            displayScale = float2(
+                params.scale.x,
+                params.scale.x * outputSize.x / (sourceAspect * outputSize.y)
+            );
+        } else {
+            displayScale = float2(
+                params.scale.y * sourceAspect * outputSize.y / outputSize.x,
+                params.scale.y
+            );
+        }
+    }
+
+    float2 sourceUV = (outputUV - params.position) / displayScale + 0.5;
 
     // Outside the layer bounds: leave the existing output untouched.
     if (sourceUV.x < 0.0 || sourceUV.x > 1.0 || sourceUV.y < 0.0 || sourceUV.y > 1.0) {
@@ -254,7 +277,6 @@ kernel void compositeLayer(
     bool hasBackground = (filters.flags & FLAG_CHROMA_KEY_BACKGROUND) != 0u;
 
     // Sample and filter the source layer.
-    float2 sourceSize = float2(source.get_width(), source.get_height());
     uint2 sourceCoord = uint2(clamp(sourceUV * sourceSize, 0.0, sourceSize - 1.0));
     float4 src = source.read(sourceCoord);
 
@@ -279,7 +301,7 @@ kernel void compositeLayer(
     float4 dst;
     if (hasBackground) {
         float2 bgSize = float2(background.get_width(), background.get_height());
-        float layerAspect = params.scale.x * outputSize.x / (params.scale.y * outputSize.y);
+        float layerAspect = displayScale.x * outputSize.x / (displayScale.y * outputSize.y);
         float bgAspect = bgSize.x / bgSize.y;
         float2 coverScale = (bgAspect > layerAspect)
             ? float2(layerAspect / bgAspect, 1.0)

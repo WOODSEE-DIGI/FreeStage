@@ -133,6 +133,19 @@ enum Source: Identifiable, Hashable, Codable, Sendable {
         }
     }
 
+    /// Whether this source's pixels should be aspect-fitted into the layer
+    /// rectangle instead of stretched to fill it. Live inputs and image/video
+    /// sources preserve aspect; generated template/color sources fill the
+    /// rectangle by default.
+    var preservesAspect: Bool {
+        switch self {
+        case .image, .media, .slideshow, .ndi, .syphon, .browser:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// The anchor offsets for face-puppet sources, if any.
     var facePuppetAnchorMap: FacePuppetAnchorMap? {
         switch self {

@@ -49,7 +49,7 @@ struct LayerRenderer: @unchecked Sendable {
             position: SIMD2<Float>(Float(layer.transform.x), Float(layer.transform.y)),
             scale: SIMD2<Float>(Float(layer.transform.scaleX), Float(layer.transform.scaleY)),
             opacity: Float(layer.opacity),
-            pad: 0
+            preserveAspect: layer.source.preservesAspect ? 1.0 : 0.0
         )
         encoder.setBytes(&params, length: MemoryLayout<LayerParams>.stride, index: 0)
 
@@ -95,7 +95,7 @@ private struct LayerParams {
     var position: SIMD2<Float>
     var scale: SIMD2<Float>
     var opacity: Float
-    var pad: Float
+    var preserveAspect: Float
 }
 
 /// Must stay byte-compatible with the struct declared in Composite.metal.
