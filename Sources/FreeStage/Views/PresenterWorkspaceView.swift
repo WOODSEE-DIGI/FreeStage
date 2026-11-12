@@ -28,10 +28,13 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
     @State private var leftColumnWidth: CGFloat = 460
+    @State private var rundownColumnWidth: CGFloat = 220
     @State private var rightColumnWidth: CGFloat = 240
     private let iconStripWidth: CGFloat = 44
     private let leftExpandedMin: CGFloat = 400
     private let leftExpandedMax: CGFloat = 700
+    private let rundownMin: CGFloat = 180
+    private let rundownMax: CGFloat = 400
     private let rightMin: CGFloat = 200
     private let rightMax: CGFloat = 450
     private let centreMin: CGFloat = 240
@@ -86,9 +89,13 @@ struct PresenterWorkspaceView: View {
                             .frame(minWidth: leftWidth, maxWidth: leftWidth)
 
                         DragDivider { delta in
-                            guard isSegmentEditorExpanded else { return }
-                            let newLeft = leftColumnWidth + delta
-                            leftColumnWidth = min(max(newLeft, leftExpandedMin), leftExpandedMax)
+                            if isSegmentEditorExpanded {
+                                let newLeft = leftColumnWidth + delta
+                                leftColumnWidth = min(max(newLeft, leftExpandedMin), leftExpandedMax)
+                            } else {
+                                let newLeft = rundownColumnWidth + delta
+                                rundownColumnWidth = min(max(newLeft, rundownMin), rundownMax)
+                            }
                         }
                         .frame(width: dividerThickness)
 
@@ -99,7 +106,7 @@ struct PresenterWorkspaceView: View {
                         .frame(minWidth: centreMin, maxWidth: centerWidth)
 
                         DragDivider { delta in
-                            let newRight = rightColumnWidth - delta
+                            let newRight = rightColumnWidth + delta
                             rightColumnWidth = min(max(newRight, rightMin), rightMax)
                         }
                         .frame(width: dividerThickness)
@@ -245,7 +252,7 @@ struct PresenterWorkspaceView: View {
 
         let desiredLeftWidth = isSegmentEditorExpanded
             ? min(max(leftExpandedMin, leftColumnWidth), leftExpandedMax)
-            : 220
+            : min(max(rundownMin, rundownColumnWidth), rundownMax)
         let desiredRightWidth = max(rightMin, rightColumnWidth)
 
         // Keep the centre at its ideal monitor width. Distribute
@@ -263,7 +270,7 @@ struct PresenterWorkspaceView: View {
             return (leftWidth, rightWidth, centerWidth)
         } else {
             let scale = sideBudget / desiredSideTotal
-            let leftWidth = max(isSegmentEditorExpanded ? leftExpandedMin : 220, desiredLeftWidth * scale)
+            let leftWidth = max(isSegmentEditorExpanded ? leftExpandedMin : rundownMin, desiredLeftWidth * scale)
             let rightWidth = max(rightMin, desiredRightWidth * scale)
             let centerWidth = max(centreMin, totalWidth - leftWidth - rightWidth - dividerThickness * 2)
             return (leftWidth, rightWidth, centerWidth)
