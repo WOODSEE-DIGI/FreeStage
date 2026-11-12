@@ -93,6 +93,7 @@ struct PresenterWorkspaceView: View {
                     placeholderPanel
                         .frame(width: rightColumnWidth)
                 }
+                .coordinateSpace(name: ResizableDivider.coordinateSpaceName)
                 .padding(.horizontal)
 
                 transportBar

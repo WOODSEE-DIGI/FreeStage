@@ -3,12 +3,16 @@
 //  FreeStage
 //
 //  Draggable vertical divider for resizable column layouts. Dragging updates
-//  the bound width while clamping to the provided range.
+//  the bound width while clamping to the provided range. Gestures are read in
+//  the workspace column coordinate space so the divider keeps tracking even as
+//  its own frame moves.
 //
 
 import SwiftUI
 
 struct ResizableDivider: View {
+    static let coordinateSpaceName = "workspaceColumns"
+
     @Binding var width: CGFloat
     let minWidth: CGFloat
     let maxWidth: CGFloat
@@ -17,15 +21,15 @@ struct ResizableDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: 10)
+            .frame(width: 16)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture()
+                DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
                     .onChanged { value in
                         if dragStartWidth == nil {
                             dragStartWidth = width
                         }
-                        let delta = value.location.x - value.startLocation.x
+                        let delta = value.translation.width
                         width = min(max(dragStartWidth! + delta, minWidth), maxWidth)
                     }
                     .onEnded { _ in
@@ -35,7 +39,7 @@ struct ResizableDivider: View {
             .overlay(
                 Rectangle()
                     .fill(Color.secondary.opacity(0.25))
-                    .frame(width: 1)
+                    .frame(width: 2)
             )
             .help("Drag to resize")
     }
