@@ -27,7 +27,7 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    private let iconStripWidth: CGFloat = 72
+    private let iconStripWidth: CGFloat = 84
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -287,58 +287,72 @@ struct PresenterWorkspaceView: View {
 
     /// Icon-only rundown used when the segment editor is expanded.
     /// Shows cue number and type icon; live/active/auto-follow badges overlay
-    /// the top-right corner. Icons are constrained to a fixed template frame
-    /// and scaled to fit so wide SF Symbols never overflow the strip.
+    /// the top-right corner. The background is a rounded rectangle behind the
+    /// content instead of a clip shape, so wide SF Symbols and badges can not
+    /// be sliced off at the right edge.
     private var iconRundown: some View {
         ScrollView {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 ForEach(Array((store.presenterRundown?.segments ?? []).enumerated()), id: \.element.id) { index, segment in
-                    Button {
-                        store.selectSegment(id: segment.id)
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            VStack(spacing: 2) {
-                                Image(systemName: segment.type.iconName)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 32, height: 32)
-                                    .foregroundStyle(
-                                        segment.id == store.liveSegmentID ? .red :
-                                        (segment.id == store.activeSegmentID ? theme.selected : theme.text)
-                                    )
-                                Text("\(index + 1)")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(theme.secondaryText)
-                            }
-                            .frame(width: 56, height: 56)
-                            .background(rowBackground(for: segment))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                            if segment.id == store.liveSegmentID {
-                                Image(systemName: "record.circle.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.red)
-                                    .offset(x: 5, y: -5)
-                            } else if segment.id == store.activeSegmentID {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(theme.selected)
-                                    .offset(x: 5, y: -5)
-                            } else if segment.autoFollow {
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.green)
-                                    .offset(x: 5, y: -5)
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .help("\(index + 1). \(segment.name)")
+                    iconButton(for: segment, index: index)
                 }
             }
             .padding(.vertical, 8)
         }
         .frame(width: iconStripWidth)
+        .scrollIndicators(.hidden)
+    }
+
+    @ViewBuilder
+    private func iconButton(for segment: PresenterSegment, index: Int) -> some View {
+        Button {
+            store.selectSegment(id: segment.id)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 2) {
+                    Image(systemName: segment.type.iconName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 36, height: 36)
+                        .foregroundStyle(iconForeground(for: segment))
+                    Text("\(index + 1)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .frame(width: 64, height: 64)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(rowBackground(for: segment))
+                )
+
+                if segment.id == store.liveSegmentID {
+                    badgeIcon("record.circle.fill", color: .red)
+                } else if segment.id == store.activeSegmentID {
+                    badgeIcon("play.circle.fill", color: theme.selected)
+                } else if segment.autoFollow {
+                    badgeIcon("arrow.right.circle.fill", color: .green)
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .help("\(index + 1). \(segment.name)")
+    }
+
+    private func badgeIcon(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 13))
+            .foregroundStyle(color)
+            .offset(x: 6, y: -6)
+    }
+
+    private func iconForeground(for segment: PresenterSegment) -> Color {
+        if segment.id == store.liveSegmentID {
+            return .red
+        } else if segment.id == store.activeSegmentID {
+            return theme.selected
+        } else {
+            return theme.text
+        }
     }
 
     // MARK: - Segment editor
@@ -800,7 +814,7 @@ struct PresenterWorkspaceView: View {
         }
     }
 
-    private func rowBackground(for segment: PresenterSegment) -> some View {
+    private func rowBackground(for segment: PresenterSegment) -> Color {
         // Only the live segment gets a tinted row background. The selected/
         // preview segment is indicated by the List selection highlight and the
         // icon colour in the icon strip, so two rows are no longer highlighted
