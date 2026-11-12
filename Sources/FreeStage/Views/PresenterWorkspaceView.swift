@@ -189,7 +189,7 @@ struct PresenterWorkspaceView: View {
                     pickVideoForSegment(segment)
                 }
             }
-            if let url = segment.mediaURL {
+            if let url = segment.videoClip?.sourceURL {
                 Text(url.lastPathComponent)
                     .font(.caption)
                     .foregroundStyle(theme.secondaryText)
@@ -198,6 +198,14 @@ struct PresenterWorkspaceView: View {
                 Text("No video selected")
                     .font(.caption)
                     .foregroundStyle(theme.secondaryText)
+            }
+
+            if segment.videoClip != nil {
+                Button("Open Clip Editor") {
+                    // Sheet presented via .sheet on the workspace view.
+                }
+                .disabled(true)
+                .help("Clip editor coming in the next build")
             }
         }
     }
@@ -208,7 +216,8 @@ struct PresenterWorkspaceView: View {
         panel.allowsMultipleSelection = false
         panel.begin { result in
             guard result == .OK, let url = panel.url else { return }
-            store.updatePresenterSegment(id: segment.id) { $0.mediaURL = url }
+            let clip = VideoClip(sourceURL: url)
+            store.updatePresenterSegment(id: segment.id) { $0.videoClip = clip }
             loadDuration(for: segment.id, url: url)
         }
     }
@@ -218,7 +227,7 @@ struct PresenterWorkspaceView: View {
             let asset = AVURLAsset(url: url)
             let duration = try? await asset.load(.duration).seconds
             await MainActor.run {
-                store.updatePresenterSegment(id: segmentID) { $0.duration = duration }
+                store.updatePresenterSegment(id: segmentID) { $0.videoClip?.sourceDuration = duration }
             }
         }
     }

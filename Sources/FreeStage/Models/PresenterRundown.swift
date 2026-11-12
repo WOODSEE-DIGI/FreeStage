@@ -57,10 +57,8 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
     var type: PresenterSegmentType
     /// For cameraGraphic / titleCard segments: the placeholder to display.
     var placeholderID: UUID?
-    /// For videoPackage segments: the video file URL.
-    var mediaURL: URL?
-    /// Cached duration of the selected video, in seconds.
-    var duration: TimeInterval?
+    /// For videoPackage segments: the trimmed video clip.
+    var videoClip: VideoClip?
     /// For cameraGraphic segments: which camera angle to use.
     var cameraAngle: PresenterCameraAngle
     /// If true, automatically advance to the next segment when this one ends.
@@ -68,13 +66,22 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
     var autoFollow: Bool
     var notes: String
 
+    /// Backward-compatible accessor for the original video URL.
+    var mediaURL: URL? {
+        videoClip?.sourceURL
+    }
+
+    /// Backward-compatible accessor for the effective trimmed duration.
+    var duration: TimeInterval? {
+        videoClip?.trimmedDuration ?? videoClip?.sourceDuration
+    }
+
     init(
         id: UUID = UUID(),
         name: String = "New Segment",
         type: PresenterSegmentType = .cameraGraphic,
         placeholderID: UUID? = nil,
-        mediaURL: URL? = nil,
-        duration: TimeInterval? = nil,
+        videoClip: VideoClip? = nil,
         cameraAngle: PresenterCameraAngle = .primary,
         autoFollow: Bool = false,
         notes: String = ""
@@ -83,11 +90,48 @@ struct PresenterSegment: Identifiable, Hashable, Codable, Sendable {
         self.name = name
         self.type = type
         self.placeholderID = placeholderID
-        self.mediaURL = mediaURL
-        self.duration = duration
+        self.videoClip = videoClip
         self.cameraAngle = cameraAngle
         self.autoFollow = autoFollow
         self.notes = notes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type, placeholderID, videoClip, cameraAngle, autoFollow, notes
+        case mediaURL, duration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        type = try container.decode(PresenterSegmentType.self, forKey: .type)
+        placeholderID = try container.decodeIfPresent(UUID.self, forKey: .placeholderID)
+        cameraAngle = try container.decodeIfPresent(PresenterCameraAngle.self, forKey: .cameraAngle) ?? .primary
+        autoFollow = try container.decodeIfPresent(Bool.self, forKey: .autoFollow) ?? false
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+
+        if let clip = try container.decodeIfPresent(VideoClip.self, forKey: .videoClip) {
+            videoClip = clip
+        } else if let url = try container.decodeIfPresent(URL.self, forKey: .mediaURL) {
+            // Migrate old mediaURL/duration fields into a VideoClip.
+            let duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
+            videoClip = VideoClip(sourceURL: url, sourceDuration: duration)
+        } else {
+            videoClip = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(placeholderID, forKey: .placeholderID)
+        try container.encodeIfPresent(videoClip, forKey: .videoClip)
+        try container.encode(cameraAngle, forKey: .cameraAngle)
+        try container.encode(autoFollow, forKey: .autoFollow)
+        try container.encode(notes, forKey: .notes)
     }
 }
 

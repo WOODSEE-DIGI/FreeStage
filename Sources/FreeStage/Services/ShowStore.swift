@@ -1140,7 +1140,7 @@ final class ShowStore: NSObject {
             name: segment.name + " Copy",
             type: segment.type,
             placeholderID: segment.placeholderID,
-            mediaURL: segment.mediaURL,
+            videoClip: segment.videoClip,
             cameraAngle: segment.cameraAngle,
             autoFollow: segment.autoFollow,
             notes: segment.notes
@@ -1258,7 +1258,7 @@ final class ShowStore: NSObject {
             }
 
         case .videoPackage:
-            if let url = segment.mediaURL {
+            if let url = segment.videoClip?.playbackURL {
                 layers.append(Layer(
                     name: segment.name,
                     source: .media(url: url),
