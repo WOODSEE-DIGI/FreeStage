@@ -858,16 +858,26 @@ struct PresenterWorkspaceView: View {
                 Label("Previous", systemImage: "backward.frame")
             }
 
-            if let liveSource = liveMediaSource {
-                videoTransportControls(for: liveSource)
+            Spacer()
+
+            // Show video controls for the live video if there is one; otherwise
+            // let the operator control the preview video while cueing it.
+            if let source = liveMediaSource ?? activeMediaSource {
+                videoTransportControls(for: source, label: liveMediaSource == nil ? "Preview" : nil)
             }
 
             Spacer()
 
             Button {
-                store.presenterGo()
+                if let liveSource = liveMediaSource,
+                   MediaSourceRenderer.shared.isPlaying(source: liveSource) {
+                    MediaSourceRenderer.shared.pause(source: liveSource)
+                } else {
+                    store.presenterGo()
+                }
             } label: {
-                Label("GO", systemImage: "play.fill")
+                let isLiveVideoPlaying = liveMediaSource.map(MediaSourceRenderer.shared.isPlaying(source:)) ?? false
+                Label(isLiveVideoPlaying ? "PAUSE" : "GO", systemImage: isLiveVideoPlaying ? "pause.fill" : "play.fill")
                     .font(.headline)
             }
             .buttonStyle(.borderedProminent)
@@ -887,12 +897,18 @@ struct PresenterWorkspaceView: View {
     }
 
     @ViewBuilder
-    private func videoTransportControls(for source: Source) -> some View {
+    private func videoTransportControls(for source: Source, label: String?) -> some View {
         // Reading the refresh ID forces SwiftUI to re-evaluate the button icon
         // while the timer ticks.
         let _ = playbackRefreshID
 
         HStack(spacing: 8) {
+            if let label {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+            }
+
             Button {
                 MediaSourceRenderer.shared.restart(source: source)
             } label: {
