@@ -12,6 +12,7 @@ import SwiftUI
 struct PresenterWorkspaceView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @State private var cameras: [CameraDevice] = []
 
     var body: some View {
         ZStack {
@@ -186,13 +187,27 @@ struct PresenterWorkspaceView: View {
         )
     }
 
-    // MARK: - Placeholders
+    // MARK: - Show setup panel
 
     private var placeholderPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Text("Show Setup")
+                .font(.headline)
+                .foregroundStyle(theme.text)
+                .padding([.horizontal, .top])
+                .padding(.bottom, 8)
+
+            cameraSection
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
+            Divider()
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
             HStack {
                 Text("Placeholders")
-                    .font(.headline)
+                    .font(.subheadline.bold())
                     .foregroundStyle(theme.text)
                 Spacer()
                 Button {
@@ -203,8 +218,7 @@ struct PresenterWorkspaceView: View {
                 .buttonStyle(.borderless)
                 .help("Add a new placeholder")
             }
-            .padding([.horizontal, .top])
-            .padding(.bottom, 8)
+            .padding(.horizontal)
 
             if let placeholders = store.presenterRundown?.placeholders, !placeholders.isEmpty {
                 List {
@@ -228,9 +242,53 @@ struct PresenterWorkspaceView: View {
                     .padding()
                     .background(theme.background.opacity(0.5))
             }
+
+            Spacer()
         }
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onAppear(perform: refreshCameras)
+    }
+
+    private var cameraSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Cameras")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    refreshCameras()
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            }
+
+            cameraPicker(angle: .primary, label: "Primary")
+            cameraPicker(angle: .secondary, label: "Secondary")
+        }
+    }
+
+    private func cameraPicker(angle: PresenterCameraAngle, label: String) -> some View {
+        let selection = Binding<String?>(
+            get: { store.presenterCameraID(for: angle) },
+            set: { store.setPresenterCameraID($0, for: angle) }
+        )
+
+        return Picker(label, selection: selection) {
+            Text("Not set")
+                .tag(String?.none)
+            ForEach(cameras) { camera in
+                Text(camera.name)
+                    .tag(String?.some(camera.uniqueID))
+            }
+        }
+        .pickerStyle(.menu)
+        .foregroundStyle(theme.text)
+    }
+
+    private func refreshCameras() {
+        cameras = CameraDevice.discover()
     }
 
     private func placeholderRow(_ placeholder: PresenterPlaceholder) -> some View {
@@ -255,16 +313,23 @@ struct PresenterWorkspaceView: View {
 
     private func placeholderEditor(_ placeholder: PresenterPlaceholder) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Edit \(placeholder.name)")
-                .font(.headline)
-                .foregroundStyle(theme.text)
+            TextField("Name", text: nameBinding(for: placeholder))
+                .textFieldStyle(.roundedBorder)
 
-            Text("Placeholder source assignment UI will go here.")
+            Text("Source")
                 .font(.caption)
                 .foregroundStyle(theme.secondaryText)
 
-            Button("Assign Test Color") {
-                store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = .color(CGColorComponents(r: 0.9, g: 0.2, b: 0.2, a: 1)) }
+            HStack(spacing: 8) {
+                Button("Image…") {
+                    pickImageForPlaceholder(placeholder)
+                }
+                Button("Color") {
+                    store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = .color(CGColorComponents(r: 0.9, g: 0.2, b: 0.2, a: 1)) }
+                }
+                Button("Black") {
+                    store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)) }
+                }
             }
 
             if placeholder.source != nil {
@@ -272,6 +337,25 @@ struct PresenterWorkspaceView: View {
                     store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = nil }
                 }
             }
+        }
+    }
+
+    private func nameBinding(for placeholder: PresenterPlaceholder) -> Binding<String> {
+        Binding(
+            get: { placeholder.name },
+            set: { newName in
+                store.updatePresenterPlaceholder(id: placeholder.id) { $0.name = newName }
+            }
+        )
+    }
+
+    private func pickImageForPlaceholder(_ placeholder: PresenterPlaceholder) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            store.updatePresenterPlaceholder(id: placeholder.id) { $0.source = .image(url: url) }
         }
     }
 
