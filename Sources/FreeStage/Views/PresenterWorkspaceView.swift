@@ -27,7 +27,7 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerImage = false
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
-    private let iconStripWidth: CGFloat = 56
+    private let iconStripWidth: CGFloat = 72
     private let playbackTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     private var isEditingClip: Binding<Bool> {
@@ -286,46 +286,49 @@ struct PresenterWorkspaceView: View {
     }
 
     /// Icon-only rundown used when the segment editor is expanded.
-    /// Shows cue number and type icon with a bit more breathing room;
-    /// live/active/auto-follow badges overlay the top-right corner.
+    /// Shows cue number and type icon; live/active/auto-follow badges overlay
+    /// the top-right corner. Icons are constrained to a fixed template frame
+    /// and scaled to fit so wide SF Symbols never overflow the strip.
     private var iconRundown: some View {
         ScrollView {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 ForEach(Array((store.presenterRundown?.segments ?? []).enumerated()), id: \.element.id) { index, segment in
                     Button {
                         store.selectSegment(id: segment.id)
                     } label: {
                         ZStack(alignment: .topTrailing) {
-                            VStack(spacing: 1) {
+                            VStack(spacing: 2) {
                                 Image(systemName: segment.type.iconName)
-                                    .font(.system(size: 22))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 32, height: 32)
                                     .foregroundStyle(
                                         segment.id == store.liveSegmentID ? .red :
                                         (segment.id == store.activeSegmentID ? theme.selected : theme.text)
                                     )
                                 Text("\(index + 1)")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(theme.secondaryText)
                             }
-                            .frame(width: 44, height: 44)
+                            .frame(width: 56, height: 56)
                             .background(rowBackground(for: segment))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
 
                             if segment.id == store.liveSegmentID {
                                 Image(systemName: "record.circle.fill")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.red)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 5, y: -5)
                             } else if segment.id == store.activeSegmentID {
                                 Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(theme.selected)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 5, y: -5)
                             } else if segment.autoFollow {
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.green)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 5, y: -5)
                             }
                         }
                     }

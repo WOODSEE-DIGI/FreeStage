@@ -62,8 +62,8 @@ struct PresenterSplitView: NSViewRepresentable {
         var isSegmentEditorExpanded = false
         var hasSetInitialPositions = false
 
-        private let leftExpandedMin: CGFloat = 400
-        private let leftCollapsedMin: CGFloat = 180
+        private let leftExpandedMin: CGFloat = 520
+        private let leftCollapsedMin: CGFloat = 200
         private let rightMin: CGFloat = 200
         private let centreMin: CGFloat = 240
 
@@ -100,7 +100,7 @@ struct PresenterSplitView: NSViewRepresentable {
             guard total > 0 else { return }
 
             hasSetInitialPositions = true
-            let leftDefault: CGFloat = isSegmentEditorExpanded ? 460 : 220
+            let leftDefault: CGFloat = isSegmentEditorExpanded ? 560 : 240
             let rightDefault: CGFloat = 240
             let dividerThickness = splitView.dividerThickness
             splitView.setPosition(leftDefault, ofDividerAt: 0)
