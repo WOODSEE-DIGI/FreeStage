@@ -221,14 +221,15 @@ struct PresenterWorkspaceView: View {
                 iconRundown
                 Divider()
                 expandedSegmentEditor(segment)
+                    .frame(width: 300)
             } else {
                 expandedRundownList
+                    .frame(width: 260)
             }
         }
-        .frame(width: isSegmentEditorExpanded ? 360 : 260)
+        .frame(width: isSegmentEditorExpanded ? 344 : 260)
         .background(theme.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .animation(.easeInOut(duration: 0.2), value: isSegmentEditorExpanded)
     }
 
     /// Full-height, named rundown list. Selecting a cue expands the editor and
@@ -276,52 +277,57 @@ struct PresenterWorkspaceView: View {
         }
     }
 
-    /// Narrow icon-only rundown used when the segment editor is expanded.
+    /// Tight icon-only rundown used when the segment editor is expanded.
+    /// Shows cue number and type icon; live/active/auto-follow badges overlay
+    /// the top-right corner.
     private var iconRundown: some View {
         ScrollView {
-            VStack(spacing: 4) {
-                ForEach(store.presenterRundown?.segments ?? []) { segment in
+            VStack(spacing: 2) {
+                ForEach(Array((store.presenterRundown?.segments ?? []).enumerated()), id: \.element.id) { index, segment in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            store.selectSegment(id: segment.id)
-                        }
+                        store.selectSegment(id: segment.id)
                     } label: {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: segment.type.iconName)
-                                .font(.title3)
-                                .foregroundStyle(
-                                    segment.id == store.liveSegmentID ? .red :
-                                    (segment.id == store.activeSegmentID ? theme.selected : theme.text)
-                                )
-                                .frame(width: 44, height: 44)
-                                .background(rowBackground(for: segment))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(spacing: 0) {
+                                Image(systemName: segment.type.iconName)
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(
+                                        segment.id == store.liveSegmentID ? .red :
+                                        (segment.id == store.activeSegmentID ? theme.selected : theme.text)
+                                    )
+                                Text("\(index + 1)")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(theme.secondaryText)
+                            }
+                            .frame(width: 36, height: 36)
+                            .background(rowBackground(for: segment))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
 
                             if segment.id == store.liveSegmentID {
                                 Image(systemName: "record.circle.fill")
-                                    .font(.caption2)
+                                    .font(.system(size: 9))
                                     .foregroundStyle(.red)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 3, y: -3)
                             } else if segment.id == store.activeSegmentID {
                                 Image(systemName: "play.circle.fill")
-                                    .font(.caption2)
+                                    .font(.system(size: 9))
                                     .foregroundStyle(theme.selected)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 3, y: -3)
                             } else if segment.autoFollow {
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.caption2)
+                                    .font(.system(size: 9))
                                     .foregroundStyle(.green)
-                                    .offset(x: 4, y: -4)
+                                    .offset(x: 3, y: -3)
                             }
                         }
                     }
                     .buttonStyle(.borderless)
-                    .help(segment.name)
+                    .help("\(index + 1). \(segment.name)")
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
         }
-        .frame(width: 60)
+        .frame(width: 44)
     }
 
     // MARK: - Segment editor
@@ -394,7 +400,9 @@ struct PresenterWorkspaceView: View {
 
             ScrollView {
                 segmentEditorBody(segment)
-                    .padding()
+                    .frame(width: 268)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
             }
         }
     }
