@@ -14,6 +14,8 @@ struct SettingsView: View {
     @Environment(\.cueTriggerServer) private var cueTriggerServer
     @Environment(\.oscCueServer) private var oscCueServer
     @State private var showingDirectoryPicker = false
+    @State private var showingLibraryPicker = false
+    @State private var libraryStatus: String?
     @State private var showingDocumentation = false
     @State private var showingStreamDestinations = false
     @State private var showingShowStyleEditor = false
@@ -44,6 +46,48 @@ struct SettingsView: View {
         @Bindable var settings = settings
 
         Form {
+            Section("Show Library") {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Library Location")
+                            .font(.headline)
+                        Text(settings.libraryRoot.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                    Spacer()
+                    Button("Choose…") {
+                        showingLibraryPicker = true
+                    }
+                }
+
+                Text("GlobalAssets (LUTs, Plugins, Sound Effects, Music, Memes, Logos, Images, Videos, Templates), Shows and Output are created inside this folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([settings.libraryRoot])
+                    }
+                    Button("Restore Folder Structure") {
+                        let result = settings.prepareLibrary()
+                        libraryStatus = result.isComplete
+                            ? "Folder structure verified."
+                            : "Could not create \(result.failures.count) folder(s) — see Console for details."
+                    }
+                    Spacer()
+                }
+
+                if let libraryStatus {
+                    Text(libraryStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Recording") {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -53,8 +97,21 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .truncationMode(.middle)
+                        if settings.hasCustomRecordingDirectory {
+                            Text("Library default: \(settings.libraryRecordingDirectory.path)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                     Spacer()
+                    if settings.hasCustomRecordingDirectory {
+                        Button("Use Library Default") {
+                            settings.resetRecordingDirectory()
+                        }
+                    }
                     Button("Choose…") {
                         showingDirectoryPicker = true
                     }
@@ -223,7 +280,16 @@ struct SettingsView: View {
         .frame(minWidth: 420, idealWidth: 520, minHeight: 640, idealHeight: 800)
         .padding()
         .sheet(isPresented: $showingDirectoryPicker) {
-            DirectoryPickerSheet(selectedURL: $settings.recordingDirectory)
+            DirectoryPickerSheet(
+                title: "Choose Recording Directory",
+                selectedURL: $settings.recordingDirectory
+            )
+        }
+        .sheet(isPresented: $showingLibraryPicker) {
+            DirectoryPickerSheet(
+                title: "Choose Show Library Location",
+                selectedURL: $settings.libraryRoot
+            )
         }
         .sheet(isPresented: $showingDocumentation) {
             DocumentationView()
@@ -364,12 +430,14 @@ struct SettingsView: View {
 
 /// Minimal directory picker sheet that updates a bound URL.
 private struct DirectoryPickerSheet: View {
+    let title: String
     @Binding var selectedURL: URL
+    var canCreateDirectories: Bool = true
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Choose Recording Directory")
+            Text(title)
                 .font(.headline)
 
             Text(selectedURL.path)
@@ -386,6 +454,7 @@ private struct DirectoryPickerSheet: View {
                     let panel = NSOpenPanel()
                     panel.canChooseFiles = false
                     panel.canChooseDirectories = true
+                    panel.canCreateDirectories = canCreateDirectories
                     panel.allowsMultipleSelection = false
                     panel.directoryURL = selectedURL
                     panel.begin { result in

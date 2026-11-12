@@ -9,11 +9,14 @@ import Foundation
 import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
+import OSLog
 
 /// Persistent application-level settings for recording and show behavior.
 @Observable
 final class AppSettings: @unchecked Sendable {
     private enum Key: String {
+        case libraryRootPath
+        case librarySetupCompleted
         case recordingDirectoryPath
         case recordingFormat
         case recordingWidth
@@ -74,40 +77,123 @@ final class AppSettings: @unchecked Sendable {
     }
 
     private let defaults = UserDefaults.standard
-    private let defaultDirectory: URL = AppSettings.defaultRecordingDirectory()
 
-    private var recordingDirectoryResolvedURL: URL?
+    private static let logger = Logger(subsystem: "com.woodseedigi.FreeStage", category: "AppSettings")
 
-    /// Default recording directory: ~/Movies/FreeStage, created on first use.
-    private static func defaultRecordingDirectory() -> URL {
-        let fileManager = FileManager.default
-        guard let movies = fileManager.urls(for: .moviesDirectory, in: .userDomainMask).first else {
-            return fileManager.temporaryDirectory
+    /// Show-library root, resolved once at launch so SwiftUI observes a stored value.
+    private var libraryRootURL: URL
+
+    /// Explicit recording-directory override picked in Settings, if any.
+    private var recordingDirectoryOverrideURL: URL?
+
+    /// Outcome of the most recent library preparation, so Settings can report problems.
+    private(set) var lastLibraryPreparation: ShowLibrary.PreparationResult?
+
+    init() {
+        let root = defaults.string(forKey: Key.libraryRootPath.rawValue)
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? ShowLibrary.defaultRoot()
+        let library = ShowLibrary(root: root)
+        libraryRootURL = library.root
+
+        // Drop a stored override that predates the show library (the old default
+        // was the library root itself) or that no longer exists, so recordings
+        // follow the library's Output/Recordings folder.
+        if let stored = defaults.string(forKey: Key.recordingDirectoryPath.rawValue) {
+            let candidate = URL(fileURLWithPath: stored, isDirectory: true).standardizedFileURL
+            let isStale = candidate == library.root || !FileManager.default.fileExists(atPath: candidate.path)
+            if !isStale {
+                recordingDirectoryOverrideURL = candidate
+            } else {
+                defaults.removeObject(forKey: Key.recordingDirectoryPath.rawValue)
+            }
         }
-        let directory = movies.appendingPathComponent("FreeStage", isDirectory: true)
-        if !fileManager.fileExists(atPath: directory.path) {
-            try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-        return directory
     }
 
-    /// Directory where new recordings are saved. Falls back to ~/Movies/FreeStage.
-    var recordingDirectory: URL {
-        get {
-            if let cached = recordingDirectoryResolvedURL { return cached }
-            if let path = defaults.string(forKey: Key.recordingDirectoryPath.rawValue) {
-                let url = URL(fileURLWithPath: path)
-                if FileManager.default.fileExists(atPath: url.path) {
-                    recordingDirectoryResolvedURL = url
-                    return url
-                }
-            }
-            return defaultDirectory
-        }
+    // MARK: - Show library
+
+    /// Root of the FreeStage show library (global assets, shows and output).
+    var libraryRoot: URL {
+        get { libraryRootURL }
         set {
-            recordingDirectoryResolvedURL = newValue
-            defaults.set(newValue.path, forKey: Key.recordingDirectoryPath.rawValue)
+            let previous = libraryRootURL
+            let resolved = newValue.standardizedFileURL
+            guard resolved != previous else { return }
+
+            libraryRootURL = resolved
+            defaults.set(resolved.path, forKey: Key.libraryRootPath.rawValue)
+            adoptRecordingsIntoNewRoot(from: previous)
+            prepareLibrary()
         }
+    }
+
+    /// The library rooted at `libraryRoot`.
+    var library: ShowLibrary { ShowLibrary(root: libraryRootURL) }
+
+    /// Whether first-run library setup has been completed.
+    var hasCompletedLibrarySetup: Bool {
+        get { defaults.bool(forKey: Key.librarySetupCompleted.rawValue) }
+        set { defaults.set(newValue, forKey: Key.librarySetupCompleted.rawValue) }
+    }
+
+    /// Persist the chosen root, create the folder template and mark setup as done.
+    @discardableResult
+    func completeLibrarySetup(root: URL) -> ShowLibrary.PreparationResult {
+        libraryRoot = root
+        let result = prepareLibrary()
+        hasCompletedLibrarySetup = true
+        return result
+    }
+
+    /// Create any missing folders in the current library. Safe to call on launch.
+    @discardableResult
+    func prepareLibrary() -> ShowLibrary.PreparationResult {
+        let result = library.prepare()
+        lastLibraryPreparation = result
+        return result
+    }
+
+    /// Point recordings at `<root>/Output/Recordings` if the user's custom
+    /// location lived inside the previous library.
+    private func adoptRecordingsIntoNewRoot(from previous: URL) {
+        guard let override = recordingDirectoryOverrideURL else { return }
+        guard Self.isDescendant(override, of: previous) else { return }
+        recordingDirectoryOverrideURL = nil
+        defaults.removeObject(forKey: Key.recordingDirectoryPath.rawValue)
+    }
+
+    private static func isDescendant(_ url: URL, of parent: URL) -> Bool {
+        let childPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let parentPath = parent.standardizedFileURL.resolvingSymlinksInPath().path
+        guard parentPath != "/" else { return true }
+        return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
+    }
+
+    /// Where recordings go when they have not been overridden in Settings.
+    var libraryRecordingDirectory: URL { library.recordings }
+
+    /// Directory where new recordings are saved. Defaults to
+    /// `<libraryRoot>/Output/Recordings`.
+    var recordingDirectory: URL {
+        get { recordingDirectoryOverrideURL ?? libraryRecordingDirectory }
+        set {
+            let resolved = newValue.standardizedFileURL
+            if resolved == libraryRecordingDirectory.standardizedFileURL {
+                resetRecordingDirectory()
+            } else {
+                recordingDirectoryOverrideURL = resolved
+                defaults.set(resolved.path, forKey: Key.recordingDirectoryPath.rawValue)
+            }
+        }
+    }
+
+    /// True when recordings are written somewhere other than the library default.
+    var hasCustomRecordingDirectory: Bool { recordingDirectoryOverrideURL != nil }
+
+    /// Send new recordings back to the library's `Output/Recordings` folder.
+    func resetRecordingDirectory() {
+        recordingDirectoryOverrideURL = nil
+        defaults.removeObject(forKey: Key.recordingDirectoryPath.rawValue)
     }
 
     var recordingFormat: RecordingFormat {
@@ -219,12 +305,17 @@ final class AppSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.hideDesktopIconsDuringCapture.rawValue) }
     }
 
-    /// Generate a unique filename inside `recordingDirectory`.
+    /// Generate a unique filename inside `recordingDirectory`, creating the
+    /// folder first if needed.
     func nextRecordingURL() -> URL {
+        let directory = recordingDirectory
+        if !library.ensureDirectory(directory) {
+            Self.logger.error("Recording directory unavailable: \(directory.path, privacy: .public)")
+        }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let name = "FreeStage-\(formatter.string(from: Date())).\(recordingFormat.fileExtension)"
-        return recordingDirectory.appendingPathComponent(name)
+        return directory.appendingPathComponent(name)
     }
 
     /// Layer defaults keyed by `Source.defaultsKey`. These are applied

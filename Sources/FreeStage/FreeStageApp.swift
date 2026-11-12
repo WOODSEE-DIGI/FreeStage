@@ -34,6 +34,7 @@ struct FreeStageApp: App {
     @StateObject private var virtualCamera: VirtualCameraOutputService
     @State private var themeStore: ThemeStore
     @State private var showProjectManager = true
+    @State private var showLibrarySetup: Bool
     @State private var showScreenCapturePermissionAlert = false
 
     init() {
@@ -87,6 +88,7 @@ struct FreeStageApp: App {
         _facePuppetTrackingService = State(wrappedValue: facePuppetTrackingService)
         _virtualCamera = StateObject(wrappedValue: virtualCamera)
         _themeStore = State(wrappedValue: themeStore)
+        _showLibrarySetup = State(initialValue: !appSettings.hasCompletedLibrarySetup)
     }
 
     var body: some SwiftUI.Scene {
@@ -131,6 +133,10 @@ struct FreeStageApp: App {
                     syncCueTriggerServer()
                     syncOSCCueServer()
                     themeStore.applyInitialAppearance()
+                    // Repair the library template if folders were moved or deleted.
+                    if appSettings.hasCompletedLibrarySetup {
+                        appSettings.prepareLibrary()
+                    }
                 }
                 .onChange(of: appSettings.cueTriggerServerEnabled) {
                     syncCueTriggerServer()
@@ -149,6 +155,11 @@ struct FreeStageApp: App {
                 }
                 .onChange(of: appSettings.hideDesktopIconsDuringCapture) {
                     screenCaptureManager.setExcludeDesktopIcons(appSettings.hideDesktopIconsDuringCapture)
+                }
+                .sheet(isPresented: $showLibrarySetup) {
+                    LibrarySetupView(initialRoot: appSettings.libraryRoot)
+                        .environment(appSettings)
+                        .environment(themeStore)
                 }
         }
         .defaultSize(width: 1600, height: 1024)

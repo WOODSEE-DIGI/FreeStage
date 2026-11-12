@@ -24,6 +24,7 @@
             <li><a href="#sources">Sources</a></li>
             <li><a href="#cues">Cues</a></li>
             <li><a href="#go">GO & STOP</a></li>
+            <li><a href="#library">Show Library</a></li>
             <li><a href="#recording">Recording</a></li>
             <li><a href="#streaming">Streaming</a></li>
             <li><a href="#chroma">Chroma Key</a></li>
@@ -217,11 +218,40 @@
             </ul>
         </section>
 
+        <section id="library">
+            <h2>Show Library</h2>
+            <p>FreeStage keeps every asset and every recording inside one <strong>show library</strong> folder, so a show on a different Mac only needs that folder to come along.</p>
+            <p>On first launch a setup sheet asks where the library should live (default <code>~/Movies/FreeStage</code>) and creates this structure:</p>
+            <pre><code>&lt;library root&gt;/
+├── FreeStage Library.md
+├── GlobalAssets/
+│   ├── LUTs/            Colour lookup tables (.cube)
+│   ├── Plugins/         Third-party effect bundles
+│   ├── Sound Effects/   Stings, applause, rimshots
+│   ├── Music/           Walk-on and backing beds
+│   ├── Memes/           Reaction images and clips
+│   ├── Logos/           Pre-keyed logos for bugs and lower thirds
+│   ├── Images/          Stills, backdrops and backgrounds
+│   ├── Videos/          Clips, loops and VT rolls
+│   └── Templates/       Imported show styles and template packs
+├── Shows/               Saved show packages (.fst)
+└── Output/
+    ├── Recordings/      Recordings from Cmd Shift R or GO
+    └── Exports/         Manual exports and renders</code></pre>
+            <ul>
+                <li>The template is <strong>additive</strong>: FreeStage never deletes or overwrites files in your library. Missing folders are recreated, and a stray file blocking a folder name is reported rather than removed.</li>
+                <li>Each folder gets a short <code>README.md</code> the first time it is created, explaining what belongs there.</li>
+                <li>Change the location any time from <strong>Settings → Show Library → Choose…</strong>, or from the <strong>Show Library</strong> row on the Project Manager. The template is created at the new location immediately.</li>
+                <li>Recordings default to <code>Output/Recordings</code> and follow the library when you move it. Choosing a different recording folder in Settings keeps that override until you press <strong>Use Library Default</strong>.</li>
+                <li><strong>Restore Folder Structure</strong> in Settings recreates any folder you deleted by hand.</li>
+            </ul>
+        </section>
+
         <section id="recording">
             <h2>Recording</h2>
             <p>FreeStage can record the Program video and mixed audio to disk.</p>
             <ul>
-                <li>Open <strong>Settings</strong> to choose the recording directory, format (H.264 or HEVC), resolution, frame rate, bitrate, auto-split interval, and minimum free-space guard. By default recordings are saved to <code>~/Movies/FreeStage</code>.</li>
+                <li>Open <strong>Settings</strong> to choose the recording directory, format (H.264 or HEVC), resolution, frame rate, bitrate, auto-split interval, and minimum free-space guard. By default recordings are saved to <code>Output/Recordings</code> inside your show library.</li>
                 <li>Enable <strong>Record on GO</strong> to start recording automatically with the first GO in Show mode.</li>
                 <li>Enable <strong>Stop recording at show end</strong> to finish the file after the last cue fires.</li>
                 <li>Use the Output menu or the STOP button to stop recording manually.</li>

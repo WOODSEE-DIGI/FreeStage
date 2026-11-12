@@ -20,6 +20,9 @@ targets:
         SWIFT_VERSION: "6.0"
         FRAMEWORK_SEARCH_PATHS:
           - Frameworks
+        USER_HEADER_SEARCH_PATHS:
+          - Vendor/MediaPipeFaceMesh/src
+          - Vendor/NDI
   FreeStage:
     type: application
     platform: macOS

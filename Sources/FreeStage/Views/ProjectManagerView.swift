@@ -28,6 +28,7 @@ struct ProjectManagerView: View {
 
             VStack(spacing: 0) {
                 header
+                libraryRow
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 32) {
@@ -64,6 +65,44 @@ struct ProjectManagerView: View {
         .padding(.horizontal, 40)
         .padding(.vertical, 24)
         .background(theme.panelBackground)
+    }
+
+    private var libraryRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.folder")
+                .foregroundStyle(theme.secondaryText)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Show Library")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.text)
+                Text(settings.libraryRoot.path)
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Button("Reveal") {
+                NSWorkspace.shared.activateFileViewerSelecting([settings.libraryRoot])
+            }
+            .controlSize(.small)
+
+            Button("Change…") {
+                chooseLibraryLocation()
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 10)
+        .background(theme.panelBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(theme.border)
+                .frame(height: 1)
+        }
     }
 
     private var actionCards: some View {
@@ -148,7 +187,26 @@ struct ProjectManagerView: View {
         }
     }
 
+    private func chooseLibraryLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = settings.libraryRoot
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the folder that will hold your FreeStage library."
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            settings.libraryRoot = url
+            if let failure = settings.lastLibraryPreparation?.failures.first {
+                presentError("Could not create \(failure.path): \(failure.reason)")
+            }
+        }
+    }
+
     private func openRecentShow(_ recent: RecentShow) {
+
         guard let url = recent.resolvedURL else {
             presentError("The saved show could not be found.")
             settings.removeRecentShow(id: recent.id)
