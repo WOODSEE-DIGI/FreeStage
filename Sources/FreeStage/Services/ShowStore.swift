@@ -1370,13 +1370,10 @@ final class ShowStore: NSObject {
                     source: source,
                     transform: .identity
                 ))
-            } else {
-                layers.append(Layer(
-                    name: "No Title",
-                    source: .color(CGColorComponents(r: 0.1, g: 0.1, b: 0.1, a: 1)),
-                    transform: .identity
-                ))
             }
+            // When no placeholder is set, render nothing so the global
+            // background layer remains visible instead of being covered by
+            // an opaque fallback card.
 
         case .stationBreak:
             layers.append(Layer(
