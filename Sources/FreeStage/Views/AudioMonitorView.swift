@@ -75,6 +75,17 @@ struct AudioMonitorView: View {
                 .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         )
         .frame(width: 220)
+        .task {
+            // Try to start the engine automatically when the monitor appears.
+            // If it fails (e.g. no microphone permission) the power button stays
+            // visible so the user can retry.
+            guard !mixer.isRunning else { return }
+            do {
+                try mixer.start()
+            } catch {
+                audioMonitorLogger.error("Auto-start audio engine failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func channelMeter(
