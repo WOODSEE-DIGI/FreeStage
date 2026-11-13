@@ -12,6 +12,7 @@ import AVFoundation
 @preconcurrency import AVFAudio
 import Observation
 import OSLog
+import os
 
 private let audioMixerLogger = Logger(subsystem: "com.woodseedigi.FreeStage", category: "AudioMixer")
 
@@ -34,6 +35,15 @@ final class AudioMixer: @unchecked Sendable {
     var isOutputMuted: Bool = false {
         didSet { updateVolumes() }
     }
+
+    // MARK: - Live levels (for the retro audio monitor)
+
+    var microphoneLevel: Float = 0
+    var systemLevel: Float = 0
+    var outputLevel: Float = 0
+
+    private let levelLock = OSAllocatedUnfairLock<(microphone: Float, system: Float)>(initialState: (0, 0))
+    private var levelTimer: Timer?
 
     // MARK: - Microphone EQ
 
@@ -106,6 +116,10 @@ final class AudioMixer: @unchecked Sendable {
         setupEngine()
     }
 
+    deinit {
+        levelTimer?.invalidate()
+    }
+
     // MARK: - Engine setup
 
     private func setupEngine() {
@@ -123,6 +137,9 @@ final class AudioMixer: @unchecked Sendable {
         engine.attach(micEQ)
         engine.connect(micSource, to: micEQ, format: mixerFormat)
         engine.connect(micEQ, to: mixer, format: mixerFormat)
+        installLevelTap(on: micEQ) { [weak self] level in
+            self?.levelLock.withLock { $0.microphone = level }
+        }
 
         // System audio source node.
         let sysSource = makeSourceNode(ring: systemRing, volumeProvider: { [weak self] in Float(self?.systemVolume ?? 1.0) })
@@ -135,12 +152,60 @@ final class AudioMixer: @unchecked Sendable {
         engine.attach(sysEQ)
         engine.connect(sysSource, to: sysEQ, format: mixerFormat)
         engine.connect(sysEQ, to: mixer, format: mixerFormat)
+        installLevelTap(on: sysEQ) { [weak self] level in
+            self?.levelLock.withLock { $0.system = level }
+        }
 
         // Mixer -> output.
         engine.connect(mixer, to: output, format: mixerFormat)
 
         updateVolumes()
         updateEQ()
+        startLevelUpdates()
+    }
+
+    private func installLevelTap(on node: AVAudioNode, handler: @escaping (Float) -> Void) {
+        node.installTap(onBus: 0, bufferSize: 1024, format: mixerFormat) { buffer, _ in
+            handler(Self.rmsLevel(from: buffer))
+        }
+    }
+
+    /// Normalised RMS level (0...1) from an AVAudioPCMBuffer.
+    private static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData else { return 0 }
+        let frameLength = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        guard frameLength > 0, channelCount > 0 else { return 0 }
+
+        var sum: Float = 0
+        for channel in 0..<channelCount {
+            let data = channelData[channel]
+            for frame in 0..<frameLength {
+                let sample = data[frame]
+                sum += sample * sample
+            }
+        }
+        let rms = sqrt(sum / Float(frameLength * channelCount))
+        // Map -60 dBFS...0 dBFS to 0...1.
+        let db = 20 * log10(max(rms, 1e-6))
+        return Float(clamp((db + 60) / 60, 0, 1))
+    }
+
+    private static func clamp<T: Comparable>(_ value: T, _ min: T, _ max: T) -> T {
+        Swift.max(min, Swift.min(value, max))
+    }
+
+    private func startLevelUpdates() {
+        levelTimer?.invalidate()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let raw = self.levelLock.withLock { $0 }
+            self.microphoneLevel = raw.microphone
+            self.systemLevel = raw.system
+            let combined = (raw.microphone * Float(self.microphoneVolume)
+                          + raw.system * Float(self.systemVolume))
+            self.outputLevel = self.isOutputMuted ? 0 : combined * Float(self.masterVolume)
+        }
     }
 
     private func makeSourceNode(ring: AudioRingBuffer, volumeProvider: @escaping () -> Float) -> AVAudioSourceNode {
@@ -204,6 +269,7 @@ final class AudioMixer: @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             self?.isRunning = true
         }
+        startLevelUpdates()
         audioMixerLogger.info("Audio engine started")
     }
 
@@ -212,6 +278,14 @@ final class AudioMixer: @unchecked Sendable {
         microphoneCapture?.stop()
         DispatchQueue.main.async { [weak self] in
             self?.isRunning = false
+            self?.microphoneLevel = 0
+            self?.systemLevel = 0
+            self?.outputLevel = 0
+        }
+        levelTimer?.invalidate()
+        levelLock.withLock {
+            $0.microphone = 0
+            $0.system = 0
         }
         audioMixerLogger.info("Audio engine stopped")
     }
