@@ -397,7 +397,7 @@ struct PresenterWorkspaceView: View {
                     Image(systemName: segment.type.iconName)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 36, height: 36)
+                        .frame(width: 28, height: 28)
                         .foregroundStyle(iconForeground(for: segment))
                     Text("\(index + 1)")
                         .font(.system(size: 13, weight: .semibold))
@@ -424,9 +424,9 @@ struct PresenterWorkspaceView: View {
 
     private func badgeIcon(_ name: String, color: Color) -> some View {
         Image(systemName: name)
-            .font(.system(size: 13))
+            .font(.system(size: 11))
             .foregroundStyle(color)
-            .offset(x: 6, y: -6)
+            .offset(x: 4, y: -4)
     }
 
     private func iconForeground(for segment: PresenterSegment) -> Color {
