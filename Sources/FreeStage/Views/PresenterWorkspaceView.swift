@@ -97,10 +97,6 @@ struct PresenterWorkspaceView: View {
                             liveMonitor
                             previewMonitor
                         }
-                        .overlay(alignment: .bottomTrailing) {
-                            AudioMonitorView()
-                                .padding([.trailing, .bottom], 8)
-                        }
                     ),
                     rightContent: AnyView(placeholderPanel)
                 )
@@ -1030,6 +1026,14 @@ struct PresenterWorkspaceView: View {
                 .padding(.vertical, 8)
 
             globalLayersSection
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
+            Divider()
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+            AudioMonitorView()
                 .padding(.horizontal)
                 .padding(.bottom, 12)
 
