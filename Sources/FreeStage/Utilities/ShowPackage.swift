@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import CryptoKit
 import OSLog
 
 private let packageLogger = Logger(subsystem: "com.woodseedigi.freestage", category: "ShowPackage")
@@ -41,7 +42,10 @@ enum ShowPackage {
             // Skip URLs already inside this package.
             guard !isInsidePackage(url, packageURL: packageURL) else { continue }
 
-            let assetName = uniqueAssetName(for: url, in: assetsURL)
+            // Deterministic per-source name so repeated saves (autosave every
+            // few minutes) overwrite the same asset instead of piling up
+            // "clip-1", "clip-2", … copies.
+            let assetName = assetName(for: url)
             let destinationURL = assetsURL.appendingPathComponent(assetName)
 
             if manager.fileExists(atPath: destinationURL.path) {
@@ -106,19 +110,21 @@ enum ShowPackage {
 
     // MARK: - Helpers
 
-    private static func uniqueAssetName(for url: URL, in assetsURL: URL) -> String {
+    /// Deterministic asset filename for a source file.
+    ///
+    /// The name is derived from the file's path so the same source always maps
+    /// to the same in-package file. That makes writing idempotent: autosave
+    /// refreshes the copy in place instead of creating numbered duplicates,
+    /// and two different files that happen to share a name still get distinct
+    /// destinations.
+    private static func assetName(for url: URL) -> String {
         let filename = url.lastPathComponent
-        guard !filename.isEmpty else { return "asset" }
-
         let base = (filename as NSString).deletingPathExtension
         let ext = (filename as NSString).pathExtension
-        var candidate = filename
-        var counter = 1
-        while FileManager.default.fileExists(atPath: assetsURL.appendingPathComponent(candidate).path) {
-            candidate = ext.isEmpty ? "\(base)-\(counter)" : "\(base)-\(counter).\(ext)"
-            counter += 1
-        }
-        return candidate
+        let digest = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8))
+        let suffix = digest.map { String(format: "%02x", $0) }.joined().prefix(8)
+        let stem = base.isEmpty ? "asset" : base
+        return ext.isEmpty ? "\(stem)-\(suffix)" : "\(stem)-\(suffix).\(ext)"
     }
 
     /// Convert an absolute file URL inside the package to a relative path
@@ -179,6 +185,14 @@ enum ShowPackage {
                     urls.append(clip.sourceURL)
                     if let proxyURL = clip.proxyURL { urls.append(proxyURL) }
                     if let subclipURL = clip.subclipURL { urls.append(subclipURL) }
+                }
+                // Cue-owned layers (screen shares, one-off images/videos) and
+                // any chroma-key background they carry.
+                for layer in segment.layers {
+                    urls.append(contentsOf: layer.source.fileURLs().filter(\.isFileURL))
+                    for filter in layer.filters {
+                        urls.append(contentsOf: filterFileURLs(in: filter).filter(\.isFileURL))
+                    }
                 }
             }
         }

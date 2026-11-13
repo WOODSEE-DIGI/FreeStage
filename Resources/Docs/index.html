@@ -195,9 +195,13 @@
             <h2>Saving Shows</h2>
             <p>Use <span class="keyboard">Cmd S</span> to save your show as a <code>.fst</code> file. FreeStage stores shows as <strong>document packages</strong>: a folder that looks like a single file in Finder and contains the show JSON plus an <code>Assets/</code> folder.</p>
             <ul>
-                <li>Every image, video, slideshow image, face-puppet image, and chroma-key background is <strong>copied into the package</strong>.</li>
+                <li><strong>Save</strong> (<span class="keyboard">Cmd S</span>) overwrites the open package. The first time a show is saved, FreeStage asks where it should live.</li>
+                <li><strong>Save As…</strong> (<span class="keyboard">Cmd Shift S</span>) always asks for a new location and switches the document to that package.</li>
+                <li><strong>Autosave</strong> runs every three minutes and writes the open package only when the show's content actually changed. It never prompts and never creates a file for a show you have not saved yet. Changing the selected cue, scene or panel layout does not count as a change.</li>
+                <li>Every image, video, slideshow image, face-puppet image, chroma-key background, and per-cue layer asset is <strong>copied into the package</strong>.</li>
                 <li>Shows are fully portable: you can move, rename, copy, or archive the <code>.fst</code> package without losing linked files.</li>
                 <li>The active cue, selected layer/scene, edit/show mode, and panel visibility are also saved and restored.</li>
+                <li>Assets inside a package keep a stable, path-derived name, so repeated autosaves overwrite the existing copy instead of creating duplicates.</li>
                 <li>Older single-file <code>.fst</code> documents can still be opened; saving them again converts them to the new package format.</li>
             </ul>
             <p><strong>Note:</strong> FreeStage is not sandboxed, so file access is governed by normal macOS permissions rather than security-scoped bookmarks.</p>

@@ -78,9 +78,23 @@ Where things live:
 | --- | --- | --- |
 | Library root | Settings → Show Library → Choose… (also on the Project Manager) | `~/Movies/FreeStage` |
 | Recordings | Settings → Recording → Choose… (override) | `<library root>/Output/Recordings` |
-| Shows | File → Save Show… | `<library root>/Shows` (suggested) |
+| Shows | File → Save (⌘S) / Save As… (⇧⌘S) | `<library root>/Shows` (suggested) |
 
 Changing the library root creates the template at the new location, and recordings that pointed inside the old library follow it automatically. A custom recording directory outside the library is preserved, and "Use Library Default" returns to `Output/Recordings`.
+
+## Saving shows
+
+`ShowDocumentSaver` (`Sources/FreeStage/Services/ShowDocumentSaver.swift`) is the only thing that writes show packages, so a manual save and an autosave can never overlap or leave a half-written document.
+
+| Action | Shortcut | Behaviour |
+| --- | --- | --- |
+| Save | ⌘S | Overwrites the open package. If the show has never been saved, it opens the Save panel first. |
+| Save As… | ⇧⌘S | Always asks for a new location and adopts it as the current document. |
+| Autosave | — | Every 3 minutes, writes the open package only when its content actually changed. Never prompts, and never creates a package for a show that has not been saved yet. |
+
+Dirty tracking uses `Show.contentHash`, which hashes the document while ignoring the `workspace` block. Moving the cue playhead, changing the selection or toggling a panel therefore never triggers a disk write; changing a cue, layer, or asset does.
+
+Saved packages are written with **deterministic asset names** derived from the source path (`clip-1f4a9c22.mov`), so repeated autosaves refresh the copy in the package instead of piling up `clip-1`, `clip-2`, … duplicates. Assets referenced by per-cue layers — and their chroma-key backgrounds — are packaged along with scene layers and global layers.
 
 ## Build
 

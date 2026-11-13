@@ -13,6 +13,9 @@ import OSLog
 @MainActor
 final class ShowStore: NSObject {
     var show: Show
+    /// Package on disk for the current show. `nil` means this show has never
+    /// been saved, so Save has to ask for a location before writing.
+    var documentURL: URL?
     var activeCueID: UUID?
     var liveCueID: UUID?
     var selectedLayerID: UUID?
@@ -173,9 +176,10 @@ final class ShowStore: NSObject {
     // MARK: - Playback control
 
     /// Replace the current show and restore all saved workspace state.
-    func load(show: Show) {
+    func load(show: Show, from url: URL? = nil) {
         stopCameraMove()
         self.show = show
+        documentURL = url
         let workspace = show.workspace
         activeCueID = workspace.activeCueID ?? show.cues.first?.id
         liveCueID = workspace.liveCueID ?? show.cues.first?.id
@@ -194,6 +198,9 @@ final class ShowStore: NSObject {
 
     func resetWorkspace() {
         stopCameraMove()
+        // A reset means a brand-new, never-saved document: forget the old file
+        // so Save asks for a location instead of overwriting the previous show.
+        documentURL = nil
         let firstCueID = show.cues.first?.id
         activeCueID = firstCueID
         liveCueID = firstCueID
@@ -214,6 +221,28 @@ final class ShowStore: NSObject {
         activeCueID = firstCueID
         selectedLayerID = nil
         selectedSceneID = nil
+    }
+
+    /// The show plus the live workspace selection, ready to write to disk.
+    /// Manual saves and autosave both persist this so reopening a show returns
+    /// to the same cue, scene, and layout state.
+    func documentSnapshot() -> Show {
+        var snapshot = show
+        snapshot.workspace = WorkspaceState(
+            activeCueID: activeCueID,
+            liveCueID: liveCueID,
+            activeSegmentID: activeSegmentID,
+            liveSegmentID: liveSegmentID,
+            selectedLayerID: selectedLayerID,
+            selectedSceneID: selectedSceneID,
+            selectedPlaceholderID: selectedPlaceholderID,
+            isEditMode: isEditMode,
+            mastheadVisible: mastheadVisible,
+            sidebarVisible: sidebarVisible,
+            inspectorVisible: inspectorVisible,
+            panicDuration: panicDuration
+        )
+        return snapshot
     }
 
     func panic() {

@@ -103,12 +103,28 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
             copy.globalLayers[layerIndex].withFileURLs(map)
         }
         if var rundown = copy.presenterRundown {
+            if var backgroundSource = rundown.backgroundSource {
+                backgroundSource = backgroundSource.withFileURLs(map)
+                rundown.backgroundSource = backgroundSource
+            }
+            for layerIndex in rundown.globalLayers.indices {
+                rundown.globalLayers[layerIndex].withFileURLs(map)
+            }
             for index in rundown.segments.indices {
                 if var clip = rundown.segments[index].videoClip {
                     clip.sourceURL = map(clip.sourceURL)
                     clip.proxyURL = clip.proxyURL.map(map)
                     clip.subclipURL = clip.subclipURL.map(map)
                     rundown.segments[index].videoClip = clip
+                }
+                if var chromaKey = rundown.segments[index].chromaKeyFilter {
+                    chromaKey.withFileURLs(map)
+                    rundown.segments[index].chromaKeyFilter = chromaKey
+                }
+                // Cue-owned layers must be remapped too, otherwise a saved
+                // package keeps absolute paths to the original files.
+                for layerIndex in rundown.segments[index].layers.indices {
+                    rundown.segments[index].layers[layerIndex].withFileURLs(map)
                 }
             }
             copy.presenterRundown = rundown
@@ -179,5 +195,16 @@ struct Show: Identifiable, Hashable, Codable, Sendable {
 
     mutating func append(cue: Cue) {
         cues.append(cue)
+    }
+}
+
+extension Show {
+    /// Hash of everything that belongs in the saved document, ignoring the
+    /// workspace/selection block. Autosave compares this so moving the cue
+    /// playhead never triggers a disk write.
+    var contentHash: Int {
+        var content = self
+        content.workspace = WorkspaceState()
+        return content.hashValue
     }
 }

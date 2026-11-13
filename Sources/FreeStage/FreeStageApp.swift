@@ -33,6 +33,8 @@ struct FreeStageApp: App {
     @State private var facePuppetTrackingService: FacePuppetTrackingService
     @StateObject private var virtualCamera: VirtualCameraOutputService
     @State private var themeStore: ThemeStore
+    @State private var documentSaver: ShowDocumentSaver
+    @State private var autosaveTask: Task<Void, Never>?
     @State private var showProjectManager = true
     @State private var showLibrarySetup: Bool
     @State private var showScreenCapturePermissionAlert = false
@@ -58,6 +60,7 @@ struct FreeStageApp: App {
         let goStreamController = GoStreamController()
         let facePuppetTrackingService = FacePuppetTrackingService()
         let virtualCamera = VirtualCameraOutputService()
+        let documentSaver = ShowDocumentSaver()
 
         captureManager.cameraControlService = cameraControlService
         store.cameraControlService = cameraControlService
@@ -88,6 +91,7 @@ struct FreeStageApp: App {
         _facePuppetTrackingService = State(wrappedValue: facePuppetTrackingService)
         _virtualCamera = StateObject(wrappedValue: virtualCamera)
         _themeStore = State(wrappedValue: themeStore)
+        _documentSaver = State(wrappedValue: documentSaver)
         _showLibrarySetup = State(initialValue: !appSettings.hasCompletedLibrarySetup)
     }
 
@@ -116,6 +120,7 @@ struct FreeStageApp: App {
             .environment(\.oscCueServer, oscCueServer)
             .environment(\.streamingService, streamingService)
             .environment(\.facePuppetTrackingService, facePuppetTrackingService)
+            .environment(\.showDocumentSaver, documentSaver)
             .alert("Screen Recording Permission Required", isPresented: $showScreenCapturePermissionAlert) {
                     Button("Open Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenRecording") {
@@ -137,6 +142,7 @@ struct FreeStageApp: App {
                     if appSettings.hasCompletedLibrarySetup {
                         appSettings.prepareLibrary()
                     }
+                    startAutosaveLoop()
                 }
                 .onChange(of: appSettings.cueTriggerServerEnabled) {
                     syncCueTriggerServer()
@@ -169,6 +175,7 @@ struct FreeStageApp: App {
                 Button("New Show") {
                     store.show = .default(style: appSettings.defaultShowStyle)
                     store.resetWorkspace()
+                    documentSaver.reset()
                 }
                 .keyboardShortcut("n", modifiers: .command)
 
@@ -177,11 +184,16 @@ struct FreeStageApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
-            CommandGroup(after: .saveItem) {
-                Button("Save Show...") {
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") {
                     saveShow()
                 }
                 .keyboardShortcut("s", modifiers: .command)
+
+                Button("Save As…") {
+                    saveShowAs()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
             }
             CommandMenu("Output") {
                 Button(virtualCamera.isExtensionActive ? "Deactivate Virtual Camera" : "Activate Virtual Camera") {
@@ -236,36 +248,79 @@ struct FreeStageApp: App {
 
     // MARK: - Show file I/O
 
+    /// Cmd-S: overwrite the current package, or ask for a location the first
+    /// time this show is saved.
     private func saveShow() {
+        guard let url = store.documentURL else {
+            saveShowAs()
+            return
+        }
+        writeShow(to: url, isSaveAs: false)
+    }
+
+    /// Cmd-Shift-S: always ask for a location.
+    private func saveShowAs() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.freeStageShow]
         panel.nameFieldStringValue = "\(store.show.name).fst"
         panel.begin { result in
             guard result == .OK, let url = panel.url else { return }
-            do {
-                var showToSave = store.show
-                showToSave.workspace = WorkspaceState(
-                    activeCueID: store.activeCueID,
-                    liveCueID: store.liveCueID,
-                    activeSegmentID: store.activeSegmentID,
-                    liveSegmentID: store.liveSegmentID,
-                    selectedLayerID: store.selectedLayerID,
-                    selectedSceneID: store.selectedSceneID,
-                    selectedPlaceholderID: store.selectedPlaceholderID,
-                    isEditMode: store.isEditMode,
-                    mastheadVisible: store.mastheadVisible,
-                    sidebarVisible: store.sidebarVisible,
-                    inspectorVisible: store.inspectorVisible,
-                    panicDuration: store.panicDuration
-                )
+            writeShow(to: url, isSaveAs: true)
+        }
+    }
 
-                let savedShow = try ShowPackage.write(showToSave, to: url)
-                store.show = savedShow
+    private func writeShow(to url: URL, isSaveAs: Bool) {
+        let snapshot = store.documentSnapshot()
+        Task {
+            do {
+                let saved = try await documentSaver.save(snapshot, to: url)
+                // Adopt the rewritten package URLs only if the show has not
+                // changed while the write was in flight, so a save can never
+                // throw away edits made a moment later.
+                if store.show.contentHash == snapshot.contentHash {
+                    var updated = saved
+                    updated.workspace = store.show.workspace
+                    store.show = updated
+                }
+                store.documentURL = url
                 appSettings.addRecentShow(url: url)
-                appLogger.info("Saved show package to \(url.path)")
+                appLogger.info("Saved show package to \(url.path) (\(isSaveAs ? "save as" : "save"))")
             } catch {
                 appLogger.error("Failed to save show: \(error.localizedDescription)")
                 presentErrorAlert("Could not save show: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Periodic safety net: write the current package if anything changed.
+    /// Skipped entirely for shows that have never been saved.
+    private func autosaveShow() async {
+        guard let url = store.documentURL else { return }
+        let snapshot = store.documentSnapshot()
+        guard documentSaver.needsSave(snapshot) else { return }
+
+        guard let saved = await documentSaver.autosave(snapshot, to: url) else {
+            if let message = documentSaver.lastErrorMessage {
+                appLogger.error("Autosave failed: \(message)")
+            }
+            return
+        }
+        if store.show.contentHash == snapshot.contentHash {
+            var updated = saved
+            updated.workspace = store.show.workspace
+            store.show = updated
+        }
+        appLogger.info("Autosaved show package to \(url.path)")
+    }
+
+    private func startAutosaveLoop() {
+        // Guard against a second loop if the window's task runs again.
+        guard autosaveTask == nil else { return }
+        autosaveTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(documentSaver.autosaveInterval))
+                guard !Task.isCancelled else { return }
+                await autosaveShow()
             }
         }
     }
@@ -279,7 +334,8 @@ struct FreeStageApp: App {
             do {
                 let show = try ShowPackage.read(from: url)
                 DispatchQueue.main.async {
-                    store.load(show: show)
+                    store.load(show: show, from: url)
+                    documentSaver.noteSaved(show, at: url)
                     appSettings.addRecentShow(url: url)
                     appLogger.info("Opened show package from \(url.path)")
                 }

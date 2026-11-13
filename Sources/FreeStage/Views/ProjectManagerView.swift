@@ -13,6 +13,7 @@ struct ProjectManagerView: View {
     @Environment(ShowStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @Environment(ThemeStore.self) private var theme
+    @Environment(\.showDocumentSaver) private var documentSaver
     @Binding var isPresented: Bool
     @State private var errorMessage: String?
     @State private var showingError = false
@@ -173,6 +174,7 @@ struct ProjectManagerView: View {
             store.show = .presenterDefault(style: settings.defaultShowStyle)
             store.resetWorkspace()
         }
+        documentSaver?.reset()
         isPresented = false
     }
 
@@ -218,7 +220,10 @@ struct ProjectManagerView: View {
     private func loadShow(from url: URL) {
         do {
             let show = try ShowPackage.read(from: url)
-            store.load(show: show)
+            store.load(show: show, from: url)
+            // Treat the file on disk as the saved state so autosave does not
+            // immediately rewrite a show that was just opened.
+            documentSaver?.noteSaved(show, at: url)
             settings.addRecentShow(url: url)
             isPresented = false
         } catch {
