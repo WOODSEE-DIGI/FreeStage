@@ -50,7 +50,7 @@ struct FreeStageApp: App {
 
         let appSettings = AppSettings()
         let themeStore = ThemeStore(settings: appSettings)
-        let audioMixer = AudioMixer()
+        let audioMixer = AudioMixer(settings: appSettings)
         let recordingService = RecordingService()
         let cameraControlService = CameraControlService()
         let captureManager = CameraCaptureManager()

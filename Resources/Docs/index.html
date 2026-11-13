@@ -258,7 +258,7 @@
             <h2>Recording</h2>
             <p>FreeStage can record the Program video and mixed audio to disk.</p>
             <ul>
-                <li>Open <strong>Settings</strong> to choose the recording directory, format (H.264 or HEVC), resolution, frame rate, bitrate, auto-split interval, and minimum free-space guard. By default recordings are saved to <code>Output/Recordings</code> inside your show library.</li>
+                <li>Open <strong>Settings</strong> to choose the recording directory, format (H.264 or HEVC), resolution, frame rate, video bitrate, audio bitrate, auto-split interval, and minimum free-space guard. By default recordings are saved to <code>Output/Recordings</code> inside your show library. The default audio bitrate is <strong>384 kbps stereo AAC</strong>, which matches YouTube's recommended high-quality setting.</li>
                 <li>Enable <strong>Record on GO</strong> to start recording automatically with the first GO in Show mode.</li>
                 <li>Enable <strong>Stop recording at show end</strong> to finish the file after the last cue fires.</li>
                 <li>Use the Output menu or the STOP button to stop recording manually.</li>
@@ -342,6 +342,8 @@
                 <li><strong>Master:</strong> overall output volume.</li>
                 <li><strong>Mute Output:</strong> silence the monitor without affecting the recording.</li>
             </ul>
+            <p>A compact <strong>retro audio monitor</strong> also appears at the bottom of the Show Setup panel in Presenter mode, showing live MIC, SYS (screen-share/NDI system audio), and OUT levels. It tries to start the audio engine automatically when the workspace appears.</p>
+            <p><strong>Settings → Audio</strong> lets you pick the default input and output devices, set default microphone/system/master levels, choose the output mute state, and select the recording audio bitrate. These defaults are restored every time FreeStage launches.</p>
             <div class="tip">
                 <p><strong>Tip:</strong> Start the audio engine before your show. If you change the input device, capture restarts automatically.</p>
             </div>
@@ -386,7 +388,8 @@ curl http://localhost:17352/cues</code></pre>
             <h2>Settings</h2>
             <p>Open Settings with <span class="keyboard">Cmd ,</span>. Open the bundled help from the Help menu or with <span class="keyboard">Cmd ?</span>.</p>
             <ul>
-                <li><strong>Recording:</strong> directory, format, bitrate.</li>
+                <li><strong>Recording:</strong> directory, format, video bitrate, audio bitrate.</li>
+                <li><strong>Audio:</strong> default input/output devices, microphone/system/master levels, output mute, and recording bitrate (256/384/512 kbps).</li>
                 <li><strong>Show Mode:</strong> Record on GO, auto-stop, virtual camera activation.</li>
                 <li><strong>Streaming:</strong> manage RTMP destinations and enable the HaishinKit backend.</li>
                 <li><strong>Show Style:</strong> choose default colours, fonts, and layout for new template layers, and save your own presets.</li>

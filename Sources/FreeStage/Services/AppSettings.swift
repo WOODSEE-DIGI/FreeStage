@@ -34,6 +34,13 @@ final class AppSettings: @unchecked Sendable {
         case recordingAutoSplitMinutes
         case recordingMinFreeSpaceMB
         case hideDesktopIconsDuringCapture
+        case defaultInputDeviceID
+        case defaultOutputDeviceID
+        case defaultMicrophoneVolume
+        case defaultSystemVolume
+        case defaultMasterVolume
+        case defaultOutputMuted
+        case audioBitrate
         case savedLayerDefaults
         case showStyles
         case selectedShowStyleID
@@ -303,6 +310,60 @@ final class AppSettings: @unchecked Sendable {
     var hideDesktopIconsDuringCapture: Bool {
         get { defaults.object(forKey: Key.hideDesktopIconsDuringCapture.rawValue) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.hideDesktopIconsDuringCapture.rawValue) }
+    }
+
+    // MARK: - Audio defaults
+
+    /// Last-selected audio input device unique ID. nil means "System Default".
+    var defaultInputDeviceID: String? {
+        get { defaults.string(forKey: Key.defaultInputDeviceID.rawValue) }
+        set { defaults.set(newValue, forKey: Key.defaultInputDeviceID.rawValue) }
+    }
+
+    /// Last-selected audio output device ID. nil means "System Default".
+    var defaultOutputDeviceID: UInt32? {
+        get {
+            let value = defaults.object(forKey: Key.defaultOutputDeviceID.rawValue) as? Int
+            return value.map { UInt32($0) }
+        }
+        set {
+            if let newValue {
+                defaults.set(Int(newValue), forKey: Key.defaultOutputDeviceID.rawValue)
+            } else {
+                defaults.removeObject(forKey: Key.defaultOutputDeviceID.rawValue)
+            }
+        }
+    }
+
+    /// Default microphone channel volume (0...2).
+    var defaultMicrophoneVolume: Double {
+        get { defaults.object(forKey: Key.defaultMicrophoneVolume.rawValue) as? Double ?? 1.0 }
+        set { defaults.set(newValue, forKey: Key.defaultMicrophoneVolume.rawValue) }
+    }
+
+    /// Default system-audio channel volume (0...2).
+    var defaultSystemVolume: Double {
+        get { defaults.object(forKey: Key.defaultSystemVolume.rawValue) as? Double ?? 1.0 }
+        set { defaults.set(newValue, forKey: Key.defaultSystemVolume.rawValue) }
+    }
+
+    /// Default master output volume (0...2).
+    var defaultMasterVolume: Double {
+        get { defaults.object(forKey: Key.defaultMasterVolume.rawValue) as? Double ?? 1.0 }
+        set { defaults.set(newValue, forKey: Key.defaultMasterVolume.rawValue) }
+    }
+
+    /// Whether output is muted by default.
+    var defaultOutputMuted: Bool {
+        get { defaults.object(forKey: Key.defaultOutputMuted.rawValue) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.defaultOutputMuted.rawValue) }
+    }
+
+    /// Audio bitrate for recordings. 384 kbps is YouTube's recommended stereo
+    /// bitrate for high-quality uploads.
+    var audioBitrate: Int {
+        get { defaults.object(forKey: Key.audioBitrate.rawValue) as? Int ?? 384_000 }
+        set { defaults.set(newValue, forKey: Key.audioBitrate.rawValue) }
     }
 
     /// Generate a unique filename inside `recordingDirectory`, creating the

@@ -110,7 +110,7 @@ final class RecordingService: @unchecked Sendable {
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 48000,
             AVNumberOfChannelsKey: 2,
-            AVEncoderBitRateKey: 192000
+            AVEncoderBitRateKey: settings?.audioBitrate ?? 384_000
         ]
         let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
         audioInput.expectsMediaDataInRealTime = true

@@ -20,20 +20,33 @@ private let audioMixerLogger = Logger(subsystem: "com.woodseedigi.FreeStage", ca
 @Observable
 final class AudioMixer: @unchecked Sendable {
     private(set) var isRunning = false
+    private weak var settings: AppSettings?
 
     // MARK: - Volumes
 
     var microphoneVolume: Double = 1.0 {
-        didSet { updateVolumes() }
+        didSet {
+            updateVolumes()
+            settings?.defaultMicrophoneVolume = microphoneVolume
+        }
     }
     var systemVolume: Double = 1.0 {
-        didSet { updateVolumes() }
+        didSet {
+            updateVolumes()
+            settings?.defaultSystemVolume = systemVolume
+        }
     }
     var masterVolume: Double = 1.0 {
-        didSet { updateVolumes() }
+        didSet {
+            updateVolumes()
+            settings?.defaultMasterVolume = masterVolume
+        }
     }
     var isOutputMuted: Bool = false {
-        didSet { updateVolumes() }
+        didSet {
+            updateVolumes()
+            settings?.defaultOutputMuted = isOutputMuted
+        }
     }
 
     // MARK: - Live levels (for the retro audio monitor)
@@ -75,6 +88,7 @@ final class AudioMixer: @unchecked Sendable {
         didSet {
             guard oldValue != self.selectedInputDeviceID else { return }
             self.microphoneCapture?.deviceID = self.selectedInputDeviceID
+            settings?.defaultInputDeviceID = self.selectedInputDeviceID
             audioMixerLogger.info("Selected input device: \(self.selectedInputDeviceID ?? "default", privacy: .public)")
         }
     }
@@ -84,6 +98,7 @@ final class AudioMixer: @unchecked Sendable {
             guard let selectedOutputDeviceID,
                   selectedOutputDeviceID != oldValue else { return }
             AudioDeviceManager.setDefaultOutputDevice(selectedOutputDeviceID)
+            settings?.defaultOutputDeviceID = selectedOutputDeviceID
         }
     }
 
@@ -111,13 +126,25 @@ final class AudioMixer: @unchecked Sendable {
     private let mixerFormat = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
     private var microphoneCapture: MicrophoneCapture?
 
-    init() {
+    init(settings: AppSettings? = nil) {
+        self.settings = settings
         microphoneCapture = MicrophoneCapture(ring: microphoneRing)
+        loadDefaults()
         setupEngine()
     }
 
     deinit {
         levelTimer?.invalidate()
+    }
+
+    private func loadDefaults() {
+        guard let settings else { return }
+        microphoneVolume = settings.defaultMicrophoneVolume
+        systemVolume = settings.defaultSystemVolume
+        masterVolume = settings.defaultMasterVolume
+        isOutputMuted = settings.defaultOutputMuted
+        selectedInputDeviceID = settings.defaultInputDeviceID
+        selectedOutputDeviceID = settings.defaultOutputDeviceID
     }
 
     // MARK: - Engine setup

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
@@ -13,6 +14,7 @@ struct SettingsView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.cueTriggerServer) private var cueTriggerServer
     @Environment(\.oscCueServer) private var oscCueServer
+    @Environment(\.audioMixer) private var mixer
     @State private var showingDirectoryPicker = false
     @State private var showingLibraryPicker = false
     @State private var libraryStatus: String?
@@ -175,6 +177,10 @@ struct SettingsView: View {
                 }
             }
 
+            if let mixer {
+                audioSection(mixer: mixer)
+            }
+
             Section("Screen Capture") {
                 Toggle("Hide desktop icons", isOn: $settings.hideDesktopIconsDuringCapture)
                     .help("Exclude Finder desktop windows from display capture so folders and files are not visible.")
@@ -313,10 +319,91 @@ struct SettingsView: View {
         #endif
     }
 
+    // MARK: - Audio section
+
+    private func audioSection(mixer: AudioMixer) -> some View {
+        @Bindable var mixer = mixer
+
+        return Section("Audio") {
+            Picker("Input Device", selection: $mixer.selectedInputDeviceID) {
+                Text("System Default").tag(nil as String?)
+                ForEach(mixer.availableInputDevices, id: \.uniqueID) { device in
+                    Text(device.localizedName).tag(device.uniqueID as String?)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("Output Device", selection: outputDeviceBinding(mixer: mixer)) {
+                Text("System Default").tag(nil as AudioDevice?)
+                ForEach(mixer.availableOutputDevices) { device in
+                    Text(device.name).tag(device as AudioDevice?)
+                }
+            }
+            .pickerStyle(.menu)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Microphone Level")
+                    Spacer()
+                    Text(mixer.microphoneVolume, format: .number.precision(.fractionLength(2)))
+                        .monospacedDigit()
+                }
+                Slider(value: $mixer.microphoneVolume, in: 0...2, step: 0.01)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("System Audio Level")
+                    Spacer()
+                    Text(mixer.systemVolume, format: .number.precision(.fractionLength(2)))
+                        .monospacedDigit()
+                }
+                Slider(value: $mixer.systemVolume, in: 0...2, step: 0.01)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Master Level")
+                    Spacer()
+                    Text(mixer.masterVolume, format: .number.precision(.fractionLength(2)))
+                        .monospacedDigit()
+                }
+                Slider(value: $mixer.masterVolume, in: 0...2, step: 0.01)
+            }
+
+            Toggle("Mute Output", isOn: $mixer.isOutputMuted)
+
+            Picker("Recording Audio Bitrate", selection: audioBitrateBinding) {
+                Text("256 kbps").tag(256_000)
+                Text("384 kbps — YouTube recommended").tag(384_000)
+                Text("512 kbps").tag(512_000)
+            }
+            .pickerStyle(.menu)
+            .help("Higher bitrates give cleaner audio for YouTube uploads. 384 kbps stereo is YouTube's recommended high-quality setting.")
+        }
+    }
+
+    private func outputDeviceBinding(mixer: AudioMixer) -> Binding<AudioDevice?> {
+        Binding(
+            get: {
+                guard let id = mixer.selectedOutputDeviceID else { return nil }
+                return mixer.availableOutputDevices.first { $0.id == id }
+            },
+            set: { mixer.selectedOutputDeviceID = $0?.id }
+        )
+    }
+
     private var bitrateBinding: Binding<Double> {
         Binding(
             get: { Double(settings.recordingBitrate) },
             set: { settings.recordingBitrate = Int($0) }
+        )
+    }
+
+    private var audioBitrateBinding: Binding<Int> {
+        Binding(
+            get: { settings.audioBitrate },
+            set: { settings.audioBitrate = $0 }
         )
     }
 
@@ -472,8 +559,10 @@ private struct DirectoryPickerSheet: View {
 }
 
 #Preview {
+    let settings = AppSettings()
     SettingsView()
-        .environment(AppSettings())
+        .environment(settings)
         .environment(ShowStore())
-        .environment(ThemeStore())
+        .environment(ThemeStore(settings: settings))
+        .environment(\.audioMixer, AudioMixer(settings: settings))
 }
