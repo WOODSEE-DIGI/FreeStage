@@ -90,13 +90,22 @@ targets:
           - -Wl,-rpath,/usr/local/lib
       configs:
         Debug:
-          CODE_SIGN_IDENTITY: "-"
+          # Stable self-signed identity for local development. Ad-hoc signing
+          # changes the binary signature on every build, which breaks macOS
+          # Screen Recording / Camera / Microphone TCC grants. Run
+          # scripts/setup-debug-signing.sh to import a self-signed identity
+          # into the login keychain and enable stable signing. The placeholder
+          # Resources/DebugCodeSigning.xcconfig keeps ad-hoc signing as the
+          # fallback until the script runs.
+          ENABLE_HARDENED_RUNTIME: NO
           CODE_SIGNING_REQUIRED: YES
           CODE_SIGNING_ALLOWED: YES
         Release:
           CODE_SIGN_IDENTITY: "-"
           CODE_SIGNING_REQUIRED: NO
           CODE_SIGNING_ALLOWED: NO
+    configFiles:
+      Debug: Resources/DebugCodeSigning.xcconfig
     info:
       path: Resources/Info.plist
       properties:
