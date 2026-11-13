@@ -90,22 +90,22 @@ targets:
           - -Wl,-rpath,/usr/local/lib
       configs:
         Debug:
-          # Stable self-signed identity for local development. Ad-hoc signing
-          # changes the binary signature on every build, which breaks macOS
-          # Screen Recording / Camera / Microphone TCC grants. Run
-          # scripts/setup-debug-signing.sh to import a self-signed identity
-          # into the login keychain and enable stable signing. The placeholder
-          # Resources/DebugCodeSigning.xcconfig keeps ad-hoc signing as the
-          # fallback until the script runs.
-          ENABLE_HARDENED_RUNTIME: NO
+          # Apple Development signing keeps the signature stable across Xcode
+          # rebuilds, so macOS Screen Recording / Camera / Microphone TCC
+          # grants survive. The team ID comes from the installed Apple
+          # Development certificate. The Debug entitlements drop the restricted
+          # system-extension.install entitlement so Xcode can auto-provision.
+          CODE_SIGN_IDENTITY: "Apple Development"
+          CODE_SIGN_STYLE: Automatic
+          DEVELOPMENT_TEAM: "3BMZ2ULZ54"
+          CODE_SIGN_ENTITLEMENTS: Resources/FreeStageDebug.entitlements
+          ENABLE_HARDENED_RUNTIME: YES
           CODE_SIGNING_REQUIRED: YES
           CODE_SIGNING_ALLOWED: YES
         Release:
           CODE_SIGN_IDENTITY: "-"
           CODE_SIGNING_REQUIRED: NO
           CODE_SIGNING_ALLOWED: NO
-    configFiles:
-      Debug: Resources/DebugCodeSigning.xcconfig
     info:
       path: Resources/Info.plist
       properties:

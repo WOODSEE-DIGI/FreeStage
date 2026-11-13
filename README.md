@@ -96,24 +96,13 @@ Dirty tracking uses `Show.contentHash`, which hashes the document while ignoring
 
 Saved packages are written with **deterministic asset names** derived from the source path (`clip-1f4a9c22.mov`), so repeated autosaves refresh the copy in the package instead of piling up `clip-1`, `clip-2`, … duplicates. Assets referenced by per-cue layers — and their chroma-key backgrounds — are packaged along with scene layers and global layers.
 
-## Stable Debug signing (optional)
+## Stable Debug signing
 
-By default FreeStage Debug builds are **ad-hoc signed** (`CODE_SIGN_IDENTITY = -`). That works, but every Xcode rebuild produces a new binary signature (cdhash). macOS stores Screen Recording / Camera / Microphone TCC grants against the app's signature, so the permission can stop working after a rebuild even though System Settings still shows FreeStage as enabled.
+Debug builds use **Apple Development** automatic signing with the team ID from your installed certificate (`3BMZ2ULZ54`). This keeps the signature stable across Xcode rebuilds, so macOS Screen Recording / Camera / Microphone TCC grants survive. Ad-hoc signing gets a new cdhash on every build, which invalidates the grant even though System Settings still shows FreeStage as enabled.
 
-To keep the grant stable across rebuilds, run the self-signed Debug identity setup once per machine:
+Debug builds use `Resources/FreeStageDebug.entitlements`, which drops the restricted `com.apple.security.system-extension.install` entitlement so Xcode can auto-provision. Virtual camera extension installation must be tested with a Release / Developer ID signed build instead.
 
-```bash
-./scripts/setup-debug-signing.sh
-```
-
-The script:
-1. Creates a self-signed certificate named **FreeStage Debug** in `~/.freestage/`.
-2. Imports it into your **login** keychain (you may be prompted for your keychain password).
-3. Writes the certificate's SHA-1 hash to `Resources/DebugCodeSigningLocal.xcconfig` (gitignored).
-
-The Debug build then uses that hash as its code signing identity. The grant only needs to be approved once; subsequent rebuilds reuse the same signature.
-
-To revert to ad-hoc Debug builds, delete `Resources/DebugCodeSigningLocal.xcconfig` or run `xcodegen generate` again.
+If you need to build Debug on a machine without the Apple Development certificate, temporarily switch the Debug signing settings in `project.yml` back to ad-hoc (`CODE_SIGN_IDENTITY: "-"`, `CODE_SIGN_STYLE: Manual`, `CODE_SIGNING_ALLOWED: YES`). You will need to re-grant Screen Recording after each rebuild in that mode.
 
 ## Build
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- No App Sandbox: FreeStage is distributed outside the Mac App Store. -->
+	<!-- Camera, microphone, and screen capture permissions are requested via -->
+	<!-- Info.plist usage strings instead of entitlements. -->
+
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Allow loading third-party frameworks and dynamic libraries -->
+	<!-- (Syphon.framework, libndi.dylib, etc.). -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- Allow JIT if any rendering or scripting path needs it. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+
+	<!-- NOTE: com.apple.security.system-extension.install is omitted from -->
+	<!-- Debug builds because it is a restricted entitlement that requires a -->
+	<!-- provisioning profile. Virtual camera extension installation must be -->
+	<!-- tested with a Release/ Developer ID signed build instead. -->
+</dict>
+</plist>
