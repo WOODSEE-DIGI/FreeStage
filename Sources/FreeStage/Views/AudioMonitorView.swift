@@ -37,6 +37,7 @@ struct AudioMonitorView: View {
                     level: Double(mixer.inputLevel(at: 0)),
                     volume: inputVolumeBinding(mixer: mixer, index: 0),
                     isMuted: inputMutedBinding(mixer: mixer, index: 0),
+                    autoGain: inputAutoGainBinding(mixer: mixer, index: 0),
                     focus: .inputs
                 )
 
@@ -50,6 +51,7 @@ struct AudioMonitorView: View {
                     level: Double(mixer.inputLevel(at: 1)),
                     volume: inputVolumeBinding(mixer: mixer, index: 1),
                     isMuted: inputMutedBinding(mixer: mixer, index: 1),
+                    autoGain: inputAutoGainBinding(mixer: mixer, index: 1),
                     focus: .inputs
                 )
 
@@ -63,6 +65,7 @@ struct AudioMonitorView: View {
                     level: Double(mixer.inputLevel(at: 2)),
                     volume: inputVolumeBinding(mixer: mixer, index: 2),
                     isMuted: inputMutedBinding(mixer: mixer, index: 2),
+                    autoGain: inputAutoGainBinding(mixer: mixer, index: 2),
                     focus: .inputs
                 )
 
@@ -81,6 +84,10 @@ struct AudioMonitorView: View {
                     isMuted: Binding(
                         get: { mixer.systemMuted },
                         set: { mixer.systemMuted = $0 }
+                    ),
+                    autoGain: Binding(
+                        get: { mixer.systemAutoGainEnabled },
+                        set: { mixer.systemAutoGainEnabled = $0 }
                     ),
                     focus: .system
                 )
@@ -101,6 +108,7 @@ struct AudioMonitorView: View {
                         get: { mixer.isOutputMuted },
                         set: { mixer.isOutputMuted = $0 }
                     ),
+                    autoGain: nil,
                     focus: .master
                 )
             }
@@ -139,6 +147,7 @@ struct AudioMonitorView: View {
         level: Double,
         volume: Binding<Double>,
         isMuted: Binding<Bool>,
+        autoGain: Binding<Bool>?,
         focus: AudioMixerFocus
     ) -> some View {
         Button {
@@ -148,6 +157,10 @@ struct AudioMonitorView: View {
                 Text(label)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(theme.text)
+
+                if let autoGain {
+                    autoGainButton(autoGain: autoGain)
+                }
 
                 muteButton(isMuted: isMuted)
 
@@ -183,6 +196,27 @@ struct AudioMonitorView: View {
         }
         .buttonStyle(.plain)
         .help("Tap to adjust \(label) settings; drag fader to change level")
+    }
+
+    private func autoGainButton(autoGain: Binding<Bool>) -> some View {
+        Button {
+            autoGain.wrappedValue.toggle()
+        } label: {
+            Text("A")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(autoGain.wrappedValue ? Color.green : theme.secondaryText)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(autoGain.wrappedValue ? Color.green.opacity(0.15) : theme.border.opacity(0.2))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(autoGain.wrappedValue ? Color.green.opacity(0.6) : theme.border.opacity(0.4), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Toggle Auto Gain")
     }
 
     private func muteButton(isMuted: Binding<Bool>) -> some View {
@@ -314,6 +348,13 @@ struct AudioMonitorView: View {
         Binding(
             get: { mixer.inputMuted(at: index) },
             set: { mixer.setInputMuted($0, at: index) }
+        )
+    }
+
+    private func inputAutoGainBinding(mixer: AudioMixer, index: Int) -> Binding<Bool> {
+        Binding(
+            get: { mixer.inputAutoGainEnabled(at: index) },
+            set: { mixer.setInputAutoGainEnabled($0, at: index) }
         )
     }
 }
