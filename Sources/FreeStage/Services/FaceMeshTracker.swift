@@ -35,6 +35,15 @@ struct FaceMeshGeometry {
     let scale: Float
 }
 
+/// CVPixelBuffer is not Sendable, but we only pass it to a single serial
+/// inference queue and never mutate it concurrently. This unchecked wrapper
+/// lets us move the buffer across the queue boundary without a global unsafe
+/// conformance.
+private final class PixelBufferBox: @unchecked Sendable {
+    let buffer: CVPixelBuffer
+    init(_ buffer: CVPixelBuffer) { self.buffer = buffer }
+}
+
 /// Tracks a face in a video stream using MediaPipe Face Mesh.
 ///
 /// Thread-safe: enqueue frames from any queue; read the latest result from
@@ -156,6 +165,7 @@ final class FaceMeshTracker: @unchecked Sendable {
         _isProcessing = true
         processingLock.unlock()
 
+        let box = PixelBufferBox(pixelBuffer)
         inferenceQueue.async { [weak self] in
             defer {
                 self?.processingLock.lock()
@@ -163,7 +173,7 @@ final class FaceMeshTracker: @unchecked Sendable {
                 self?.processingLock.unlock()
             }
             guard let self else { return }
-            if let frame = self.process(pixelBuffer) {
+            if let frame = self.process(box.buffer) {
                 self.lock.lock()
                 self._latestFrame = frame
                 self.lock.unlock()
