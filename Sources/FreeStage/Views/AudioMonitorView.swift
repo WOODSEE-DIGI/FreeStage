@@ -14,7 +14,7 @@ struct AudioMonitorView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.audioMixer) private var mixer
     @Environment(\.recordingService) private var recordingService
-    @State private var isExpanded = false
+    @State private var showingAudioMixer = false
 
     var body: some View {
         Group {
@@ -75,6 +75,10 @@ struct AudioMonitorView: View {
                 .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         )
         .frame(width: 220)
+        .sheet(isPresented: $showingAudioMixer) {
+            AudioMixerView()
+                .frame(minWidth: 320, idealWidth: 360, minHeight: 520, idealHeight: 640)
+        }
         .task {
             // Try to start the engine automatically when the monitor appears.
             // If it fails (e.g. no microphone permission) the power button stays
@@ -130,15 +134,23 @@ struct AudioMonitorView: View {
                     }
                 } label: {
                     Image(systemName: "power")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.red)
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.borderless)
                 .help("Start audio engine")
             } else {
-                Image(systemName: "waveform")
-                    .font(.system(size: 10))
-                    .foregroundStyle(theme.accent)
+                Button {
+                    showingAudioMixer = true
+                } label: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.borderless)
+                .help("Open Audio Mixer settings")
             }
 
             Spacer()
@@ -146,15 +158,15 @@ struct AudioMonitorView: View {
             if let recordingService = recordingService, recordingService.isRecording {
                 HStack(spacing: 2) {
                     Image(systemName: "record.circle.fill")
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundStyle(.red)
                     Text(formatDuration(recordingService.recordingDuration))
-                        .font(.system(size: 8, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(theme.secondaryText)
                 }
             }
         }
-        .frame(height: 14)
+        .frame(height: 24)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
