@@ -3,8 +3,13 @@
 <plist version="1.0">
 <dict>
 	<!-- No App Sandbox: FreeStage is distributed outside the Mac App Store. -->
-	<!-- Camera, microphone, and screen capture permissions are requested via -->
-	<!-- Info.plist usage strings instead of entitlements. -->
+	<!-- Camera and microphone access require the Hardened Runtime entitlements -->
+	<!-- below in addition to the Info.plist usage strings. -->
+
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.microphone</key>
+	<true/>
 
 	<key>com.apple.security.network.server</key>
 	<true/>
