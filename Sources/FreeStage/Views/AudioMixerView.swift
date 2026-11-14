@@ -59,10 +59,9 @@ struct AudioMixerView: View {
 
                             Divider()
 
-                            channelSection(
-                                icon: "speaker.wave.2.fill",
-                                label: "System Audio",
+                            systemChannelSection(
                                 volume: $mixer.systemVolume,
+                                isMuted: $mixer.systemMuted,
                                 lowGain: $mixer.systemLowGain,
                                 midGain: $mixer.systemMidGain,
                                 highGain: $mixer.systemHighGain
@@ -145,6 +144,9 @@ struct AudioMixerView: View {
                 Text("Input \(index + 1)")
                     .font(.subheadline.bold())
                 Spacer()
+                Toggle("Mute", isOn: inputMutedBinding(mixer: mixer, index: index))
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
                 Picker("Input \(index + 1)", selection: inputDeviceBinding(mixer: mixer, index: index)) {
                     Text("Off").tag(nil as String?)
                     ForEach(mixer.availableInputDevices, id: \.uniqueID) { device in
@@ -186,6 +188,13 @@ struct AudioMixerView: View {
         Binding(
             get: { mixer.inputVolume(at: index) },
             set: { mixer.setInputVolume($0, at: index) }
+        )
+    }
+
+    private func inputMutedBinding(mixer: AudioMixer, index: Int) -> Binding<Bool> {
+        Binding(
+            get: { mixer.inputMuted(at: index) },
+            set: { mixer.setInputMuted($0, at: index) }
         )
     }
 
@@ -250,6 +259,43 @@ struct AudioMixerView: View {
                 Text(label)
                     .font(.headline)
                 Spacer()
+                Text("\(volume.wrappedValue, specifier: "%.2f")")
+                    .font(.caption.monospacedDigit())
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Volume")
+                        .font(.caption)
+                    Spacer()
+                }
+                Slider(value: volume, in: 0...2, step: 0.01)
+            }
+
+            HStack(spacing: 8) {
+                compactEQSlider(label: "Low", value: lowGain)
+                compactEQSlider(label: "Mid", value: midGain)
+                compactEQSlider(label: "High", value: highGain)
+            }
+        }
+    }
+
+    private func systemChannelSection(
+        volume: Binding<Double>,
+        isMuted: Binding<Bool>,
+        lowGain: Binding<Double>,
+        midGain: Binding<Double>,
+        highGain: Binding<Double>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "speaker.wave.2.fill")
+                Text("System Audio")
+                    .font(.headline)
+                Spacer()
+                Toggle("Mute", isOn: isMuted)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
                 Text("\(volume.wrappedValue, specifier: "%.2f")")
                     .font(.caption.monospacedDigit())
             }

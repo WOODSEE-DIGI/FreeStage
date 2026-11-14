@@ -2,9 +2,9 @@
 //  AudioMonitorView.swift
 //  FreeStage
 //
-//  Compact retro audio level monitor for the bottom-right corner of the
-//  presenter workspace. Shows microphone and output levels as LED bars,
-//  mute status, and a quick way to start/stop the audio engine.
+//  Compact retro audio mixer for the bottom-right corner of the presenter
+//  workspace. Shows live levels and vertical faders for each input channel,
+//  system audio, and the master output.
 //
 
 import SwiftUI
@@ -29,36 +29,78 @@ struct AudioMonitorView: View {
 
     private func monitorBody(mixer: AudioMixer) -> some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                channelMeterButton(
-                    label: "MIC",
-                    level: Double(mixer.microphoneLevel),
-                    isMuted: false,
-                    deviceName: activeInputName(mixer: mixer),
+            HStack(spacing: 8) {
+                channelStrip(
+                    mixer: mixer,
+                    label: "IN 1",
+                    deviceName: inputDeviceName(mixer: mixer, index: 0),
+                    level: Double(mixer.inputLevel(at: 0)),
+                    volume: inputVolumeBinding(mixer: mixer, index: 0),
+                    isMuted: inputMutedBinding(mixer: mixer, index: 0),
                     focus: .inputs
                 )
 
                 Divider()
                     .background(theme.border.opacity(0.4))
 
-                channelMeterButton(
+                channelStrip(
+                    mixer: mixer,
+                    label: "IN 2",
+                    deviceName: inputDeviceName(mixer: mixer, index: 1),
+                    level: Double(mixer.inputLevel(at: 1)),
+                    volume: inputVolumeBinding(mixer: mixer, index: 1),
+                    isMuted: inputMutedBinding(mixer: mixer, index: 1),
+                    focus: .inputs
+                )
+
+                Divider()
+                    .background(theme.border.opacity(0.4))
+
+                channelStrip(
+                    mixer: mixer,
+                    label: "IN 3",
+                    deviceName: inputDeviceName(mixer: mixer, index: 2),
+                    level: Double(mixer.inputLevel(at: 2)),
+                    volume: inputVolumeBinding(mixer: mixer, index: 2),
+                    isMuted: inputMutedBinding(mixer: mixer, index: 2),
+                    focus: .inputs
+                )
+
+                Divider()
+                    .background(theme.border.opacity(0.4))
+
+                channelStrip(
+                    mixer: mixer,
                     label: "SYS",
-                    level: Double(mixer.systemLevel),
-                    isMuted: false,
                     deviceName: "System",
+                    level: Double(mixer.systemLevel),
+                    volume: Binding(
+                        get: { mixer.systemVolume },
+                        set: { mixer.systemVolume = $0 }
+                    ),
+                    isMuted: Binding(
+                        get: { mixer.systemMuted },
+                        set: { mixer.systemMuted = $0 }
+                    ),
                     focus: .system
                 )
 
                 Divider()
                     .background(theme.border.opacity(0.4))
 
-                channelMeterButton(
+                channelStrip(
+                    mixer: mixer,
                     label: "OUT",
+                    deviceName: outputDeviceName(mixer: mixer),
                     level: Double(mixer.outputLevel),
-                    isMuted: mixer.isOutputMuted,
-                    deviceName: mixer.selectedOutputDeviceID == nil
-                        ? "Default"
-                        : (mixer.availableOutputDevices.first { $0.id == mixer.selectedOutputDeviceID }?.name ?? "Output"),
+                    volume: Binding(
+                        get: { mixer.masterVolume },
+                        set: { mixer.masterVolume = $0 }
+                    ),
+                    isMuted: Binding(
+                        get: { mixer.isOutputMuted },
+                        set: { mixer.isOutputMuted = $0 }
+                    ),
                     focus: .master
                 )
             }
@@ -75,15 +117,12 @@ struct AudioMonitorView: View {
                 )
                 .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         )
-        .frame(width: 220)
+        .frame(width: 340)
         .sheet(item: $audioMixerFocus, onDismiss: { audioMixerFocus = nil }) { focus in
             AudioMixerView(focus: focus)
                 .frame(minWidth: 460, idealWidth: 520, minHeight: 880, idealHeight: 980)
         }
         .task {
-            // Try to start the engine automatically when the monitor appears.
-            // If it fails (e.g. no microphone permission) the power button stays
-            // visible so the user can retry.
             guard !mixer.isRunning else { return }
             do {
                 try mixer.start()
@@ -93,57 +132,112 @@ struct AudioMonitorView: View {
         }
     }
 
-    private func channelMeterButton(
+    private func channelStrip(
+        mixer: AudioMixer,
         label: String,
-        level: Double,
-        isMuted: Bool,
         deviceName: String,
+        level: Double,
+        volume: Binding<Double>,
+        isMuted: Binding<Bool>,
         focus: AudioMixerFocus
     ) -> some View {
         Button {
             audioMixerFocus = focus
         } label: {
-            channelMeter(
-                label: label,
-                level: level,
-                isMuted: isMuted,
-                deviceName: deviceName
-            )
+            VStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(theme.text)
+
+                muteButton(isMuted: isMuted)
+
+                ZStack {
+                    HStack(spacing: 4) {
+                        RetroLEDMeter(level: isMuted.wrappedValue ? 0 : level, theme: theme)
+                            .frame(width: 16, height: 110)
+
+                        verticalFader(value: volume, theme: theme)
+                            .frame(width: 22, height: 110)
+                    }
+                }
+
+                HStack(spacing: 2) {
+                    Circle()
+                        .fill(isMuted.wrappedValue ? Color.red : Color.green)
+                        .frame(width: 5, height: 5)
+                    Text(isMuted.wrappedValue ? "MUTE" : "LIVE")
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .foregroundStyle(isMuted.wrappedValue ? Color.red : Color.green)
+                }
+
+                Text(deviceName)
+                    .font(.system(size: 7))
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(1)
+                    .frame(width: 54)
+
+                Text(volume.wrappedValue, format: .number.precision(.fractionLength(2)))
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundStyle(theme.secondaryText)
+            }
         }
         .buttonStyle(.plain)
-        .help("Tap to adjust \(label) settings")
+        .help("Tap to adjust \(label) settings; drag fader to change level")
     }
 
-    private func channelMeter(
-        label: String,
-        level: Double,
-        isMuted: Bool,
-        deviceName: String
-    ) -> some View {
-        VStack(spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(theme.text)
-
-            RetroLEDMeter(level: isMuted ? 0 : level, theme: theme)
-                .frame(width: 24, height: 92)
-
-            HStack(spacing: 2) {
-                Circle()
-                    .fill(isMuted ? Color.red : Color.green)
-                    .frame(width: 6, height: 6)
-                Text(isMuted ? "MUTE" : "LIVE")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundStyle(isMuted ? Color.red : Color.green)
-            }
-
-            Text(deviceName)
-                .font(.system(size: 8))
-                .foregroundStyle(theme.secondaryText)
-                .lineLimit(1)
-                .frame(width: 58)
+    private func muteButton(isMuted: Binding<Bool>) -> some View {
+        Button {
+            isMuted.wrappedValue.toggle()
+        } label: {
+            Text("M")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(isMuted.wrappedValue ? Color.red : theme.secondaryText)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isMuted.wrappedValue ? Color.red.opacity(0.15) : theme.border.opacity(0.2))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(isMuted.wrappedValue ? Color.red.opacity(0.6) : theme.border.opacity(0.4), lineWidth: 1)
+                )
         }
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .help("Mute/unmute channel")
+    }
+
+    private func verticalFader(value: Binding<Double>, theme: ThemeStore) -> some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                // Track background.
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(theme.border.opacity(0.25))
+                    .frame(width: 6)
+
+                // Fill up to current value.
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(theme.accent)
+                    .frame(width: 6, height: geometry.size.height * (value.wrappedValue / 2.0))
+
+                // Draggable handle.
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 12, height: 12)
+                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .position(
+                        x: geometry.size.width / 2,
+                        y: geometry.size.height * (1.0 - value.wrappedValue / 2.0)
+                    )
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged { gesture in
+                                let normalized = 1.0 - (gesture.location.y / geometry.size.height)
+                                let clamped = max(0, min(2, normalized * 2))
+                                value.wrappedValue = clamped
+                            }
+                    )
+            }
+        }
     }
 
     private func footer(mixer: AudioMixer) -> some View {
@@ -199,14 +293,28 @@ struct AudioMonitorView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    private func activeInputName(mixer: AudioMixer) -> String {
-        let activeIDs = mixer.selectedInputDeviceIDs.compactMap { $0 }
-        guard !activeIDs.isEmpty else { return "Default" }
-        if activeIDs.count == 1,
-           let device = mixer.availableInputDevices.first(where: { $0.uniqueID == activeIDs.first }) {
-            return device.localizedName
-        }
-        return "\(activeIDs.count) Inputs"
+    private func inputDeviceName(mixer: AudioMixer, index: Int) -> String {
+        guard let id = mixer.inputDeviceID(at: index) else { return "Off" }
+        return mixer.availableInputDevices.first { $0.uniqueID == id }?.localizedName ?? "Input"
+    }
+
+    private func outputDeviceName(mixer: AudioMixer) -> String {
+        guard let id = mixer.selectedOutputDeviceID else { return "Default" }
+        return mixer.availableOutputDevices.first { $0.id == id }?.name ?? "Output"
+    }
+
+    private func inputVolumeBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputVolume(at: index) },
+            set: { mixer.setInputVolume($0, at: index) }
+        )
+    }
+
+    private func inputMutedBinding(mixer: AudioMixer, index: Int) -> Binding<Bool> {
+        Binding(
+            get: { mixer.inputMuted(at: index) },
+            set: { mixer.setInputMuted($0, at: index) }
+        )
     }
 }
 
@@ -215,7 +323,7 @@ struct AudioMonitorView: View {
 struct RetroLEDMeter: View {
     let level: Double
     let theme: ThemeStore
-    private let segments = 20
+    private let segments = 24
 
     var body: some View {
         GeometryReader { geometry in

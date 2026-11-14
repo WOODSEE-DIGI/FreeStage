@@ -31,10 +31,24 @@ final class AudioMixer: @unchecked Sendable {
             persistInputDefaults()
         }
     }
+    /// Per-input channel mute. When true the channel is silent but its fader
+    /// position is preserved.
+    var inputMuted: [Bool] = [false, false, false] {
+        didSet {
+            updateVolumes()
+            persistInputDefaults()
+        }
+    }
     var systemVolume: Double = 1.0 {
         didSet {
             updateVolumes()
             settings?.defaultSystemVolume = systemVolume
+        }
+    }
+    var systemMuted: Bool = false {
+        didSet {
+            updateVolumes()
+            settings?.defaultSystemMuted = systemMuted
         }
     }
     var masterVolume: Double = 1.0 {
@@ -160,6 +174,26 @@ final class AudioMixer: @unchecked Sendable {
         persistInputDefaults()
     }
 
+    /// Raw input level (0...1) for the channel before volume and mute.
+    func inputLevel(at index: Int) -> Float {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        return levelLock.withLock { state in
+            guard index < state.inputs.count else { return 0 }
+            return state.inputs[index]
+        }
+    }
+
+    func inputMuted(at index: Int) -> Bool {
+        guard (0..<Self.inputChannelCount).contains(index) else { return false }
+        return inputMuted[index]
+    }
+
+    func setInputMuted(_ muted: Bool, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputMuted[index] = muted
+        persistInputDefaults()
+    }
+
     private func persistInputDefaults() {
         guard let settings else { return }
         var channels = settings.inputChannels
@@ -167,6 +201,7 @@ final class AudioMixer: @unchecked Sendable {
             channels[index] = AppSettings.InputChannelSettings(
                 deviceID: selectedInputDeviceIDs[index],
                 volume: inputVolumes[index],
+                isMuted: inputMuted[index],
                 lowGain: inputLowGains[index],
                 midGain: inputMidGains[index],
                 highGain: inputHighGains[index]
@@ -218,11 +253,13 @@ final class AudioMixer: @unchecked Sendable {
             selectedInputDeviceIDs[index] = channels[index].deviceID
             microphoneCaptures[index].deviceID = channels[index].deviceID
             inputVolumes[index] = channels[index].volume
+            inputMuted[index] = channels[index].isMuted
             inputLowGains[index] = channels[index].lowGain
             inputMidGains[index] = channels[index].midGain
             inputHighGains[index] = channels[index].highGain
         }
         systemVolume = settings.defaultSystemVolume
+        systemMuted = settings.defaultSystemMuted
         masterVolume = settings.defaultMasterVolume
         isOutputMuted = settings.defaultOutputMuted
         selectedOutputDeviceID = settings.defaultOutputDeviceID
@@ -237,7 +274,10 @@ final class AudioMixer: @unchecked Sendable {
         // Input source nodes + EQ (one per hardware input channel).
         for index in 0..<Self.inputChannelCount {
             let ring = inputRings[index]
-            let source = makeSourceNode(ring: ring, volumeProvider: { [weak self] in Float(self?.inputVolumes[index] ?? 0) })
+            let source = makeSourceNode(ring: ring, volumeProvider: { [weak self] in
+                guard let self, !self.inputMuted[index] else { return 0 }
+                return Float(self.inputVolumes[index])
+            })
             inputSourceNodes.append(source)
             engine.attach(source)
 
@@ -255,7 +295,10 @@ final class AudioMixer: @unchecked Sendable {
         }
 
         // System audio source node.
-        let sysSource = makeSourceNode(ring: systemRing, volumeProvider: { [weak self] in Float(self?.systemVolume ?? 1.0) })
+        let sysSource = makeSourceNode(ring: systemRing, volumeProvider: { [weak self] in
+            guard let self, !self.systemMuted else { return 0 }
+            return Float(self.systemVolume)
+        })
         self.systemSourceNode = sysSource
         engine.attach(sysSource)
 
@@ -313,12 +356,15 @@ final class AudioMixer: @unchecked Sendable {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             let raw = self.levelLock.withLock { $0 }
-            self.microphoneLevel = raw.inputs.max() ?? 0
-            self.systemLevel = raw.system
-            let inputSum = zip(raw.inputs, self.inputVolumes).reduce(Float(0)) { sum, pair in
-                sum + pair.0 * Float(pair.1)
+            let activeInputs = zip(zip(raw.inputs, self.inputVolumes), self.inputMuted).map { pair -> Float in
+                let ((level, volume), muted) = pair
+                return muted ? 0 : level * Float(volume)
             }
-            let combined = inputSum + raw.system * Float(self.systemVolume)
+            self.microphoneLevel = activeInputs.max() ?? 0
+            self.systemLevel = self.systemMuted ? 0 : raw.system * Float(self.systemVolume)
+            let inputSum = activeInputs.reduce(0, +)
+            let systemContribution = self.systemMuted ? 0 : raw.system * Float(self.systemVolume)
+            let combined = inputSum + systemContribution
             self.outputLevel = self.isOutputMuted ? 0 : combined * Float(self.masterVolume)
         }
     }

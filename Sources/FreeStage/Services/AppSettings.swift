@@ -36,6 +36,7 @@ final class AppSettings: @unchecked Sendable {
         case hideDesktopIconsDuringCapture
         case defaultOutputDeviceID
         case defaultSystemVolume
+        case defaultSystemMuted
         case defaultMasterVolume
         case defaultOutputMuted
         case audioBitrate
@@ -334,6 +335,12 @@ final class AppSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.defaultSystemVolume.rawValue) }
     }
 
+    /// Whether system audio is muted by default.
+    var defaultSystemMuted: Bool {
+        get { defaults.object(forKey: Key.defaultSystemMuted.rawValue) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.defaultSystemMuted.rawValue) }
+    }
+
     /// Default master output volume (0...2).
     var defaultMasterVolume: Double {
         get { defaults.object(forKey: Key.defaultMasterVolume.rawValue) as? Double ?? 1.0 }
@@ -360,13 +367,15 @@ final class AppSettings: @unchecked Sendable {
     struct InputChannelSettings: Codable, Equatable {
         var deviceID: String?
         var volume: Double
+        var isMuted: Bool
         var lowGain: Double
         var midGain: Double
         var highGain: Double
 
-        init(deviceID: String? = nil, volume: Double = 1.0, lowGain: Double = 0.0, midGain: Double = 0.0, highGain: Double = 0.0) {
+        init(deviceID: String? = nil, volume: Double = 1.0, isMuted: Bool = false, lowGain: Double = 0.0, midGain: Double = 0.0, highGain: Double = 0.0) {
             self.deviceID = deviceID
             self.volume = volume
+            self.isMuted = isMuted
             self.lowGain = lowGain
             self.midGain = midGain
             self.highGain = highGain
@@ -374,9 +383,9 @@ final class AppSettings: @unchecked Sendable {
     }
 
     private static let defaultInputChannels: [InputChannelSettings] = [
-        InputChannelSettings(deviceID: nil, volume: 1.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
-        InputChannelSettings(deviceID: nil, volume: 0.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
-        InputChannelSettings(deviceID: nil, volume: 0.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0)
+        InputChannelSettings(deviceID: nil, volume: 1.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0)
     ]
 
     /// Persisted settings for the three independent input channels.
