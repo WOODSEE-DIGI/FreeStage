@@ -1270,6 +1270,10 @@ struct PresenterWorkspaceView: View {
                     screenPermissionWarning
                 }
 
+                if segment.type == .cameraGraphic {
+                    cameraLayerRow(segment: segment)
+                }
+
                 if segment.layers.isEmpty {
                     Text("No cue layers yet.")
                         .font(.caption)
@@ -1365,6 +1369,34 @@ struct PresenterWorkspaceView: View {
         .contentShape(Rectangle())
         .onTapGesture { selectedCueLayerID = layer.id }
         .background(isSelected ? theme.selected.opacity(0.15) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func cameraLayerRow(segment: PresenterSegment) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "video.fill")
+                .foregroundStyle(theme.accent)
+                .frame(width: 16)
+            Text(segment.cameraAngle.displayName)
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+            Spacer()
+            Picker("Camera placement", selection: Binding(
+                get: { segment.cameraLayerPlacement },
+                set: { newPlacement in
+                    store.updatePresenterSegment(id: segment.id) { $0.cameraLayerPlacement = newPlacement }
+                }
+            )) {
+                Text("BG").tag(Layer.Placement.background)
+                Text("FG").tag(Layer.Placement.foreground)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 90)
+            .help("Background puts screen shares on top of the camera. Foreground puts the camera on top.")
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .background(theme.selected.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 

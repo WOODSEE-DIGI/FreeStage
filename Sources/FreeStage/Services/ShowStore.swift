@@ -1402,38 +1402,19 @@ final class ShowStore: NSObject {
         layers.append(contentsOf: segment.layers
             .filter { $0.placement == .background && $0.isVisible })
 
+        // For cameraGraphic segments, the camera can either sit behind cue
+        // layers (default) or in front of them. The placeholder graphic always
+        // follows the camera so it stays anchored to the shot.
+        let cameraIsBackground = segment.type == .cameraGraphic && segment.cameraLayerPlacement == .background
+
+        if cameraIsBackground {
+            appendCameraAndPlaceholder(to: &layers, segment: segment)
+        }
+
         switch segment.type {
         case .cameraGraphic:
-            if let cameraID = presenterCameraID(for: segment.cameraAngle) {
-                var cameraLayer = Layer(
-                    name: segment.cameraAngle.displayName,
-                    source: .camera(deviceID: cameraID),
-                    transform: cameraTransform(from: segment.cameraSettings)
-                )
-                cameraLayer.cameraSettings = segment.cameraSettings
-                if let chromaKey = segment.chromaKeyFilter {
-                    cameraLayer.filters.append(.chromaKey(chromaKey))
-                }
-                layers.append(cameraLayer)
-            } else {
-                layers.append(Layer(
-                    name: "No Camera",
-                    source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
-                    transform: .identity
-                ))
-            }
-            if let placeholder = placeholder(id: segment.placeholderID),
-               let source = placeholder.source {
-                layers.append(Layer(
-                    name: placeholder.name,
-                    source: source,
-                    transform: ItemTransform(
-                        x: 0.5, y: 0.85,
-                        scaleX: 0.4, scaleY: 0.15,
-                        rotation: 0, crop: .zero
-                    )
-                ))
-            }
+            // Camera/placeholder handled above or below depending on placement.
+            break
 
         case .videoPackage:
             if let clip = segment.videoClip {
@@ -1484,6 +1465,12 @@ final class ShowStore: NSObject {
         layers.append(contentsOf: segment.layers
             .filter { $0.placement == .foreground && $0.isVisible })
 
+        // When the camera is in the foreground it must sit above the cue
+        // foreground layers so the presenter is not hidden by a screen share.
+        if !cameraIsBackground && segment.type == .cameraGraphic {
+            appendCameraAndPlaceholder(to: &layers, segment: segment)
+        }
+
         // Global overlays (logo bugs, lower-thirds, etc.) appear on top of
         // every presenter segment.
         if let foregroundLayers = show.presenterRundown?.globalLayers
@@ -1493,4 +1480,39 @@ final class ShowStore: NSObject {
 
         return Scene(name: segment.name, layers: layers, outputSize: CGSize(width: 1920, height: 1080))
     }
+
+    private func appendCameraAndPlaceholder(to layers: inout [Layer], segment: PresenterSegment) {
+        guard segment.type == .cameraGraphic else { return }
+        if let cameraID = presenterCameraID(for: segment.cameraAngle) {
+            var cameraLayer = Layer(
+                name: segment.cameraAngle.displayName,
+                source: .camera(deviceID: cameraID),
+                transform: cameraTransform(from: segment.cameraSettings)
+            )
+            cameraLayer.cameraSettings = segment.cameraSettings
+            if let chromaKey = segment.chromaKeyFilter {
+                cameraLayer.filters.append(.chromaKey(chromaKey))
+            }
+            layers.append(cameraLayer)
+        } else {
+            layers.append(Layer(
+                name: "No Camera",
+                source: .color(CGColorComponents(r: 0, g: 0, b: 0, a: 1)),
+                transform: .identity
+            ))
+        }
+        if let placeholder = placeholder(id: segment.placeholderID),
+           let source = placeholder.source {
+            layers.append(Layer(
+                name: placeholder.name,
+                source: source,
+                transform: ItemTransform(
+                    x: 0.5, y: 0.85,
+                    scaleX: 0.4, scaleY: 0.15,
+                    rotation: 0, crop: .zero
+                )
+            ))
+        }
+    }
+
 }
