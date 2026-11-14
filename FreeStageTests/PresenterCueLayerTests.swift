@@ -116,6 +116,75 @@ struct PresenterCueLayerTests {
         #expect(cueFGIndex < globalFGIndex)
     }
 
+    @Test("Camera layer defaults to background and sits behind cue foreground layers")
+    func cameraLayerDefaultBackgroundOrder() {
+        let screen = Layer(
+            name: "Screen",
+            source: .screen(displayID: 1),
+            placement: .foreground
+        )
+        let (store, segment) = makeStore(segmentLayers: [screen])
+        store.setPresenterCameraID("primary-cam", for: .primary)
+
+        let scene = store.scene(for: segment)
+        let names = scene.layers.map(\.name)
+
+        let cameraIndex = names.firstIndex(of: "Primary Camera")
+        let screenIndex = names.firstIndex(of: "Screen")
+        #expect(cameraIndex != nil)
+        #expect(screenIndex != nil)
+        #expect(cameraIndex! < screenIndex!)
+    }
+
+    @Test("Camera layer in foreground renders above cue foreground layers")
+    func cameraLayerForegroundOrder() {
+        let screen = Layer(
+            name: "Screen",
+            source: .screen(displayID: 1),
+            placement: .foreground
+        )
+        let (store, segment) = makeStore(segmentLayers: [screen])
+        store.setPresenterCameraID("primary-cam", for: .primary)
+        store.updatePresenterSegment(id: segment.id) { $0.cameraLayerPlacement = .foreground }
+
+        let scene = store.scene(for: store.presenterSegment(id: segment.id)!)
+        let names = scene.layers.map(\.name)
+
+        let cameraIndex = names.firstIndex(of: "Primary Camera")
+        let screenIndex = names.firstIndex(of: "Screen")
+        #expect(cameraIndex != nil)
+        #expect(screenIndex != nil)
+        #expect(cameraIndex! > screenIndex!)
+    }
+
+    @Test("Segment round-trips cameraLayerPlacement through Codable")
+    func cameraLayerPlacementRoundTrip() throws {
+        var segment = PresenterSegment(name: "Cue")
+        segment.cameraLayerPlacement = .foreground
+
+        let data = try JSONEncoder().encode(segment)
+        let decoded = try JSONDecoder().decode(PresenterSegment.self, from: data)
+
+        #expect(decoded.cameraLayerPlacement == .foreground)
+    }
+
+    @Test("Legacy segment JSON without cameraLayerPlacement decodes as background")
+    func legacyCameraLayerPlacementDefault() throws {
+        let json = """
+        {
+          "id": "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+          "name": "Opening",
+          "type": "cameraGraphic",
+          "cameraAngle": "primary",
+          "autoFollow": false,
+          "notes": ""
+        }
+        """.data(using: .utf8)!
+
+        let segment = try JSONDecoder().decode(PresenterSegment.self, from: json)
+        #expect(segment.cameraLayerPlacement == .background)
+    }
+
     @Test("Hidden cue layers are excluded from the scene")
     func hiddenCueLayerExcluded() {
         let hidden = Layer(

@@ -24,6 +24,7 @@ final class CameraCaptureManager: @unchecked Sendable {
     private var textures: [String: MTLTexture] = [:]
     private var pixelBuffers: [String: CVPixelBuffer] = [:]
     private var delegates: [String: CaptureDelegate] = [:]
+    private var pendingAccessRequests: Set<String> = []
     private let lock = NSLock()
 
     /// Optional service used to apply per-camera settings when capture starts.
@@ -45,11 +46,43 @@ final class CameraCaptureManager: @unchecked Sendable {
             lock.unlock()
             return
         }
+        let isPending = pendingAccessRequests.contains(uniqueID)
         lock.unlock()
+        guard !isPending else { return }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .notDetermined:
+            lock.lock()
+            pendingAccessRequests.insert(uniqueID)
+            lock.unlock()
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    self?.lock.lock()
+                    self?.pendingAccessRequests.remove(uniqueID)
+                    self?.lock.unlock()
+                    if granted {
+                        self?.startCapture(uniqueID: uniqueID)
+                    } else {
+                        Self.logger.error("Camera access denied; cannot start \(uniqueID, privacy: .public)")
+                    }
+                }
+            }
+            return
+        case .denied, .restricted:
+            Self.logger.error("Camera access denied/restricted; cannot start \(uniqueID, privacy: .public)")
+            return
+        case .authorized:
+            break
+        @unknown default:
+            break
+        }
 
         guard let avDevice = AVCaptureDevice(uniqueID: uniqueID) else {
             Self.logger.warning("Camera device not found: \(uniqueID, privacy: .public)")
             return
+        }
+        if avDevice.isInUseByAnotherApplication {
+            Self.logger.warning("Camera \(avDevice.localizedName, privacy: .public) is already in use by another application")
         }
 
         let session = AVCaptureSession()

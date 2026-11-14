@@ -28,6 +28,7 @@ struct PresenterWorkspaceView: View {
     @State private var isPickingGlobalLayerVideo = false
     @State private var selectedGlobalLayerID: UUID?
     @State private var selectedCueLayerID: UUID?
+    @State private var cameraAccessStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
     @State private var isPickingCueLayerImage = false
     @State private var isPickingCueLayerVideo = false
     @State private var isPickingCueScreen = false
@@ -118,8 +119,10 @@ struct PresenterWorkspaceView: View {
         }
         .onChange(of: store.activeSegmentID) { _, _ in
             selectedCueLayerID = nil
+            updateCameraCapture()
         }
         .task {
+            checkCameraAccess()
             updateCameraCapture()
             updateScreenCapture()
         }
@@ -254,6 +257,21 @@ struct PresenterWorkspaceView: View {
 
     private func updateScreenCapture() {
         screenCaptureManager?.syncCaptures(requiredIDs: requiredScreenIDs)
+    }
+
+    private func checkCameraAccess() {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        cameraAccessStatus = status
+        if status == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    self.cameraAccessStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                    if granted {
+                        self.updateCameraCapture()
+                    }
+                }
+            }
+        }
     }
 
     private func cameraIDs(for scene: Scene?) -> Set<String> {
@@ -1060,6 +1078,24 @@ struct PresenterWorkspaceView: View {
 
             cameraPicker(angle: .primary, label: "Primary")
             cameraPicker(angle: .secondary, label: "Secondary")
+
+            if cameraAccessStatus == .denied || cameraAccessStatus == .restricted {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text("Camera access is disabled. Enable it in System Settings to use cameras.")
+                        .font(.caption)
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    Button("Open Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .font(.caption)
+                }
+                .padding(.top, 4)
+            }
         }
     }
 
@@ -1448,7 +1484,25 @@ struct PresenterWorkspaceView: View {
         let selectedID = store.presenterCameraID(for: angle)
         let selection = Binding<String?>(
             get: { selectedID },
-            set: { store.setPresenterCameraID($0, for: angle) }
+            set: { newID in
+                let status = AVCaptureDevice.authorizationStatus(for: .video)
+                if status == .authorized {
+                    store.setPresenterCameraID(newID, for: angle)
+                    updateCameraCapture()
+                } else if status == .notDetermined {
+                    AVCaptureDevice.requestAccess(for: .video) { granted in
+                        Task { @MainActor in
+                            self.cameraAccessStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                            if granted {
+                                store.setPresenterCameraID(newID, for: angle)
+                                self.updateCameraCapture()
+                            }
+                        }
+                    }
+                } else {
+                    self.cameraAccessStatus = status
+                }
+            }
         )
         let selectedIsMissing = selectedID != nil && !cameras.contains(where: { $0.uniqueID == selectedID })
 
