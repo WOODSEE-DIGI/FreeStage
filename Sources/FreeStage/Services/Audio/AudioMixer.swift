@@ -39,6 +39,11 @@ final class AudioMixer: @unchecked Sendable {
             persistInputDefaults()
         }
     }
+    /// Per-input auto-gain enable. When true the dynamics processor keeps the
+    /// channel near the YouTube target level.
+    var inputAutoGainEnabled: [Bool] = [false, false, false] {
+        didSet { persistInputDefaults() }
+    }
     var systemVolume: Double = 1.0 {
         didSet {
             updateVolumes()
@@ -50,6 +55,9 @@ final class AudioMixer: @unchecked Sendable {
             updateVolumes()
             settings?.defaultSystemMuted = systemMuted
         }
+    }
+    var systemAutoGainEnabled: Bool = false {
+        didSet { settings?.defaultSystemAutoGainEnabled = systemAutoGainEnabled }
     }
     var masterVolume: Double = 1.0 {
         didSet {
@@ -194,6 +202,30 @@ final class AudioMixer: @unchecked Sendable {
         persistInputDefaults()
     }
 
+    func inputAutoGainEnabled(at index: Int) -> Bool {
+        guard (0..<Self.inputChannelCount).contains(index) else { return false }
+        return inputAutoGainEnabled[index]
+    }
+
+    func setInputAutoGainEnabled(_ enabled: Bool, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputAutoGainEnabled[index] = enabled
+        inputDynamics[index].isEnabled = enabled
+        persistInputDefaults()
+    }
+
+    /// Current auto-gain reduction/amplification in dB for UI metering.
+    func inputAutoGainDB(at index: Int) -> Double {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        let gain = inputDynamics[index].currentGain
+        return Double(20 * log10(gain))
+    }
+
+    /// Current system audio auto-gain in dB.
+    var systemAutoGainDB: Double {
+        Double(20 * log10(systemDynamics.currentGain))
+    }
+
     private func persistInputDefaults() {
         guard let settings else { return }
         var channels = settings.inputChannels
@@ -202,6 +234,7 @@ final class AudioMixer: @unchecked Sendable {
                 deviceID: selectedInputDeviceIDs[index],
                 volume: inputVolumes[index],
                 isMuted: inputMuted[index],
+                autoGainEnabled: inputAutoGainEnabled[index],
                 lowGain: inputLowGains[index],
                 midGain: inputMidGains[index],
                 highGain: inputHighGains[index]
@@ -233,11 +266,16 @@ final class AudioMixer: @unchecked Sendable {
     @ObservationIgnored private var systemEQNode: AVAudioUnitEQ?
     private let mixerFormat = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
     private var microphoneCaptures: [MicrophoneCapture] = []
+    private var inputDynamics: [AudioDynamicsProcessor] = []
+    private var systemDynamics = AudioDynamicsProcessor()
 
     init(settings: AppSettings? = nil) {
         self.settings = settings
         inputRings = (0..<Self.inputChannelCount).map { _ in AudioRingBuffer(capacity: 48000 * 2 * 2) }
         microphoneCaptures = inputRings.map { MicrophoneCapture(ring: $0) }
+        inputDynamics = (0..<Self.inputChannelCount).map { _ in AudioDynamicsProcessor() }
+        inputDynamics.forEach { $0.isEnabled = false }
+        systemDynamics.isEnabled = false
         loadDefaults()
         setupEngine()
     }
@@ -254,12 +292,16 @@ final class AudioMixer: @unchecked Sendable {
             microphoneCaptures[index].deviceID = channels[index].deviceID
             inputVolumes[index] = channels[index].volume
             inputMuted[index] = channels[index].isMuted
+            inputAutoGainEnabled[index] = channels[index].autoGainEnabled
+            inputDynamics[index].isEnabled = channels[index].autoGainEnabled
             inputLowGains[index] = channels[index].lowGain
             inputMidGains[index] = channels[index].midGain
             inputHighGains[index] = channels[index].highGain
         }
         systemVolume = settings.defaultSystemVolume
         systemMuted = settings.defaultSystemMuted
+        systemAutoGainEnabled = settings.defaultSystemAutoGainEnabled
+        systemDynamics.isEnabled = systemAutoGainEnabled
         masterVolume = settings.defaultMasterVolume
         isOutputMuted = settings.defaultOutputMuted
         selectedOutputDeviceID = settings.defaultOutputDeviceID
@@ -274,7 +316,7 @@ final class AudioMixer: @unchecked Sendable {
         // Input source nodes + EQ (one per hardware input channel).
         for index in 0..<Self.inputChannelCount {
             let ring = inputRings[index]
-            let source = makeSourceNode(ring: ring, volumeProvider: { [weak self] in
+            let source = makeSourceNode(ring: ring, dynamics: inputDynamics[index], volumeProvider: { [weak self] in
                 guard let self, !self.inputMuted[index] else { return 0 }
                 return Float(self.inputVolumes[index])
             })
@@ -295,7 +337,7 @@ final class AudioMixer: @unchecked Sendable {
         }
 
         // System audio source node.
-        let sysSource = makeSourceNode(ring: systemRing, volumeProvider: { [weak self] in
+        let sysSource = makeSourceNode(ring: systemRing, dynamics: systemDynamics, volumeProvider: { [weak self] in
             guard let self, !self.systemMuted else { return 0 }
             return Float(self.systemVolume)
         })
@@ -369,7 +411,7 @@ final class AudioMixer: @unchecked Sendable {
         }
     }
 
-    private func makeSourceNode(ring: AudioRingBuffer, volumeProvider: @escaping () -> Float) -> AVAudioSourceNode {
+    private func makeSourceNode(ring: AudioRingBuffer, dynamics: AudioDynamicsProcessor, volumeProvider: @escaping () -> Float) -> AVAudioSourceNode {
         AVAudioSourceNode { isSilence, timestamp, frameCount, audioBufferList -> OSStatus in
             let channels = 2
             let requested = Int(frameCount) * channels
@@ -378,6 +420,10 @@ final class AudioMixer: @unchecked Sendable {
 
             var temp = [Float](repeating: 0, count: requested)
             let read = ring.read(into: &temp, count: requested)
+
+            // Apply live auto-gain / limiting before the user fader.
+            dynamics.process(&temp)
+
             let gain = volumeProvider()
             for i in 0..<read {
                 temp[i] *= gain

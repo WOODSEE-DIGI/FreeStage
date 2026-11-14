@@ -60,6 +60,7 @@ struct AudioMixerView: View {
                             Divider()
 
                             systemChannelSection(
+                                mixer: mixer,
                                 volume: $mixer.systemVolume,
                                 isMuted: $mixer.systemMuted,
                                 lowGain: $mixer.systemLowGain,
@@ -144,6 +145,11 @@ struct AudioMixerView: View {
                 Text("Input \(index + 1)")
                     .font(.subheadline.bold())
                 Spacer()
+                if mixer.inputAutoGainEnabled(at: index) {
+                    Text("AGC \(mixer.inputAutoGainDB(at: index), specifier: "%.1f") dB")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.green)
+                }
                 Toggle("Mute", isOn: inputMutedBinding(mixer: mixer, index: index))
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
@@ -157,6 +163,10 @@ struct AudioMixerView: View {
                 .labelsHidden()
                 .frame(maxWidth: 220)
             }
+
+            Toggle("Auto Gain (YouTube level)", isOn: inputAutoGainBinding(mixer: mixer, index: index))
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
@@ -195,6 +205,13 @@ struct AudioMixerView: View {
         Binding(
             get: { mixer.inputMuted(at: index) },
             set: { mixer.setInputMuted($0, at: index) }
+        )
+    }
+
+    private func inputAutoGainBinding(mixer: AudioMixer, index: Int) -> Binding<Bool> {
+        Binding(
+            get: { mixer.inputAutoGainEnabled(at: index) },
+            set: { mixer.setInputAutoGainEnabled($0, at: index) }
         )
     }
 
@@ -281,6 +298,7 @@ struct AudioMixerView: View {
     }
 
     private func systemChannelSection(
+        mixer: AudioMixer,
         volume: Binding<Double>,
         isMuted: Binding<Bool>,
         lowGain: Binding<Double>,
@@ -293,12 +311,24 @@ struct AudioMixerView: View {
                 Text("System Audio")
                     .font(.headline)
                 Spacer()
+                if mixer.systemAutoGainEnabled {
+                    Text("AGC \(mixer.systemAutoGainDB, specifier: "%.1f") dB")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.green)
+                }
                 Toggle("Mute", isOn: isMuted)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
                 Text("\(volume.wrappedValue, specifier: "%.2f")")
                     .font(.caption.monospacedDigit())
             }
+
+            Toggle("Auto Gain (YouTube level)", isOn: Binding(
+                get: { mixer.systemAutoGainEnabled },
+                set: { mixer.systemAutoGainEnabled = $0 }
+            ))
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {

@@ -37,6 +37,7 @@ final class AppSettings: @unchecked Sendable {
         case defaultOutputDeviceID
         case defaultSystemVolume
         case defaultSystemMuted
+        case defaultSystemAutoGainEnabled
         case defaultMasterVolume
         case defaultOutputMuted
         case audioBitrate
@@ -341,6 +342,12 @@ final class AppSettings: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.defaultSystemMuted.rawValue) }
     }
 
+    /// Whether system audio auto-gain is enabled by default.
+    var defaultSystemAutoGainEnabled: Bool {
+        get { defaults.object(forKey: Key.defaultSystemAutoGainEnabled.rawValue) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.defaultSystemAutoGainEnabled.rawValue) }
+    }
+
     /// Default master output volume (0...2).
     var defaultMasterVolume: Double {
         get { defaults.object(forKey: Key.defaultMasterVolume.rawValue) as? Double ?? 1.0 }
@@ -368,14 +375,16 @@ final class AppSettings: @unchecked Sendable {
         var deviceID: String?
         var volume: Double
         var isMuted: Bool
+        var autoGainEnabled: Bool
         var lowGain: Double
         var midGain: Double
         var highGain: Double
 
-        init(deviceID: String? = nil, volume: Double = 1.0, isMuted: Bool = false, lowGain: Double = 0.0, midGain: Double = 0.0, highGain: Double = 0.0) {
+        init(deviceID: String? = nil, volume: Double = 1.0, isMuted: Bool = false, autoGainEnabled: Bool = false, lowGain: Double = 0.0, midGain: Double = 0.0, highGain: Double = 0.0) {
             self.deviceID = deviceID
             self.volume = volume
             self.isMuted = isMuted
+            self.autoGainEnabled = autoGainEnabled
             self.lowGain = lowGain
             self.midGain = midGain
             self.highGain = highGain
@@ -383,9 +392,9 @@ final class AppSettings: @unchecked Sendable {
     }
 
     private static let defaultInputChannels: [InputChannelSettings] = [
-        InputChannelSettings(deviceID: nil, volume: 1.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
-        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
-        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0)
+        InputChannelSettings(deviceID: nil, volume: 1.0, isMuted: false, autoGainEnabled: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, autoGainEnabled: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, isMuted: false, autoGainEnabled: false, lowGain: 0.0, midGain: 0.0, highGain: 0.0)
     ]
 
     /// Persisted settings for the three independent input channels.
