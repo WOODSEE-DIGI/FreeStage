@@ -125,7 +125,7 @@ struct AudioMonitorView: View {
                 )
                 .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         )
-        .frame(width: 340)
+        .frame(minWidth: 280, maxWidth: .infinity)
         .sheet(item: $audioMixerFocus, onDismiss: { audioMixerFocus = nil }) { focus in
             AudioMixerView(focus: focus)
                 .frame(minWidth: 460, idealWidth: 520, minHeight: 880, idealHeight: 980)

@@ -96,8 +96,8 @@ struct PresenterSplitView: NSViewRepresentable {
 
         private let leftExpandedMin: CGFloat = 580
         private let leftCollapsedMin: CGFloat = 220
-        private let rightMin: CGFloat = 200
-        private let centreMin: CGFloat = 240
+        private let rightMin: CGFloat = 360
+        private let centreMin: CGFloat = 200
 
         // MARK: - Divider position constraints
 
@@ -137,8 +137,8 @@ struct PresenterSplitView: NSViewRepresentable {
             guard !isApplyingPositions, splitView.arrangedSubviews.count == 3 else { return false }
             let total = splitView.bounds.width
             let dividerThickness = splitView.dividerThickness
-            let leftDefault: CGFloat = isSegmentEditorExpanded ? 640 : 240
-            let rightDefault: CGFloat = 240
+            let leftDefault: CGFloat = isSegmentEditorExpanded ? 600 : 240
+            let rightDefault: CGFloat = 360
 
             // Never set positions that would push a divider off-screen. On the
             // very first layout pass the split view can still be 1 pt wide;
