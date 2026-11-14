@@ -78,7 +78,7 @@ Where things live:
 | --- | --- | --- |
 | Library root | Settings → Show Library → Choose… (also on the Project Manager) | `~/Movies/FreeStage` |
 | Recordings | Settings → Recording → Choose… (override) | `<library root>/Output/Recordings` |
-| Audio defaults | Settings → Audio | 384 kbps stereo AAC, all levels at 1.0 |
+| Audio defaults | Settings → Audio | 3 input channels + system audio, 384 kbps stereo AAC |
 | Shows | File → Save (⌘S) / Save As… (⇧⌘S) | `<library root>/Shows` (suggested) |
 
 Changing the library root creates the template at the new location, and recordings that pointed inside the old library follow it automatically. A custom recording directory outside the library is preserved, and "Use Library Default" returns to `Output/Recordings`.

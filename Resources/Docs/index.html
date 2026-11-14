@@ -337,15 +337,15 @@
             <p>The Audio tab in the right sidebar controls the live mix.</p>
             <ul>
                 <li><strong>Output Device:</strong> choose the device FreeStage monitors to. This changes the system default output.</li>
-                <li><strong>Input Device:</strong> choose the microphone or audio interface to capture.</li>
-                <li><strong>Microphone / System Audio:</strong> each channel has volume and Low/Mid/High EQ.</li>
+                <li><strong>Input Channels 1–3:</strong> up to three independent microphones or audio interfaces, each with its own volume and Low/Mid/High EQ.</li>
+                <li><strong>System Audio:</strong> screen-share/NDI/system audio with its own volume and EQ.</li>
                 <li><strong>Master:</strong> overall output volume.</li>
                 <li><strong>Mute Output:</strong> silence the monitor without affecting the recording.</li>
             </ul>
-            <p>A compact <strong>retro audio monitor</strong> also appears at the bottom of the Show Setup panel in Presenter mode, showing live MIC, SYS (screen-share/NDI system audio), and OUT levels. It tries to start the audio engine automatically when the workspace appears.</p>
-            <p><strong>Settings → Audio</strong> lets you pick the default input and output devices, set default microphone/system/master levels, choose the output mute state, and select the recording audio bitrate. These defaults are restored every time FreeStage launches.</p>
+            <p>A compact <strong>retro audio monitor</strong> also appears at the bottom of the Show Setup panel in Presenter mode, showing live MIC (aggregate of all enabled inputs), SYS (screen-share/NDI system audio), and OUT levels. It tries to start the audio engine automatically when the workspace appears.</p>
+            <p><strong>Settings → Audio</strong> lets you pick the default output device, enable and set the default level for each of the three input channels, set the system/master levels, choose the output mute state, and select the recording audio bitrate. These defaults are restored every time FreeStage launches.</p>
             <div class="tip">
-                <p><strong>Tip:</strong> Start the audio engine before your show. If you change the input device, capture restarts automatically.</p>
+                <p><strong>Tip:</strong> Start the audio engine before your show. If you change an input device, capture restarts automatically.</p>
             </div>
         </section>
 
@@ -389,7 +389,7 @@ curl http://localhost:17352/cues</code></pre>
             <p>Open Settings with <span class="keyboard">Cmd ,</span>. Open the bundled help from the Help menu or with <span class="keyboard">Cmd ?</span>.</p>
             <ul>
                 <li><strong>Recording:</strong> directory, format, video bitrate, audio bitrate.</li>
-                <li><strong>Audio:</strong> default input/output devices, microphone/system/master levels, output mute, and recording bitrate (256/384/512 kbps).</li>
+                <li><strong>Audio:</strong> default output device, up to three input channels with per-channel levels, system/master levels, output mute, and recording bitrate (256/384/512 kbps).</li>
                 <li><strong>Show Mode:</strong> Record on GO, auto-stop, virtual camera activation.</li>
                 <li><strong>Streaming:</strong> manage RTMP destinations and enable the HaishinKit backend.</li>
                 <li><strong>Show Style:</strong> choose default colours, fonts, and layout for new template layers, and save your own presets.</li>

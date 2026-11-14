@@ -325,13 +325,7 @@ struct SettingsView: View {
         @Bindable var mixer = mixer
 
         return Section("Audio") {
-            Picker("Input Device", selection: $mixer.selectedInputDeviceID) {
-                Text("System Default").tag(nil as String?)
-                ForEach(mixer.availableInputDevices, id: \.uniqueID) { device in
-                    Text(device.localizedName).tag(device.uniqueID as String?)
-                }
-            }
-            .pickerStyle(.menu)
+            inputDevicePickers(mixer: mixer)
 
             Picker("Output Device", selection: outputDeviceBinding(mixer: mixer)) {
                 Text("System Default").tag(nil as AudioDevice?)
@@ -340,16 +334,6 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.menu)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Microphone Level")
-                    Spacer()
-                    Text(mixer.microphoneVolume, format: .number.precision(.fractionLength(2)))
-                        .monospacedDigit()
-                }
-                Slider(value: $mixer.microphoneVolume, in: 0...2, step: 0.01)
-            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -381,6 +365,46 @@ struct SettingsView: View {
             .pickerStyle(.menu)
             .help("Higher bitrates give cleaner audio for YouTube uploads. 384 kbps stereo is YouTube's recommended high-quality setting.")
         }
+    }
+
+    private func inputDevicePickers(mixer: AudioMixer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(0..<AudioMixer.inputChannelCount, id: \.self) { index in
+                HStack {
+                    Text("Input \(index + 1)")
+                        .font(.subheadline)
+                    Spacer()
+                    Picker("Input \(index + 1)", selection: inputDeviceBinding(mixer: mixer, index: index)) {
+                        Text("Off").tag(nil as String?)
+                        ForEach(mixer.availableInputDevices, id: \.uniqueID) { device in
+                            Text(device.localizedName).tag(device.uniqueID as String?)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                }
+
+                Slider(value: inputVolumeBinding(mixer: mixer, index: index), in: 0...2, step: 0.01) {
+                    Text("Level")
+                }
+                .padding(.bottom, 4)
+            }
+        }
+    }
+
+    private func inputDeviceBinding(mixer: AudioMixer, index: Int) -> Binding<String?> {
+        Binding(
+            get: { mixer.inputDeviceID(at: index) },
+            set: { mixer.setInputDeviceID($0, at: index) }
+        )
+    }
+
+    private func inputVolumeBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputVolume(at: index) },
+            set: { mixer.setInputVolume($0, at: index) }
+        )
     }
 
     private func outputDeviceBinding(mixer: AudioMixer) -> Binding<AudioDevice?> {

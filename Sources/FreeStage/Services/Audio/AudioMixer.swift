@@ -24,10 +24,11 @@ final class AudioMixer: @unchecked Sendable {
 
     // MARK: - Volumes
 
-    var microphoneVolume: Double = 1.0 {
+    /// Per-input channel volumes. Three independent hardware inputs.
+    var inputVolumes: [Double] = [1.0, 0.0, 0.0] {
         didSet {
             updateVolumes()
-            settings?.defaultMicrophoneVolume = microphoneVolume
+            persistInputDefaults()
         }
     }
     var systemVolume: Double = 1.0 {
@@ -51,22 +52,23 @@ final class AudioMixer: @unchecked Sendable {
 
     // MARK: - Live levels (for the retro audio monitor)
 
+    /// Aggregate input level used by the retro monitor (max of all channels).
     var microphoneLevel: Float = 0
     var systemLevel: Float = 0
     var outputLevel: Float = 0
 
-    private let levelLock = OSAllocatedUnfairLock<(microphone: Float, system: Float)>(initialState: (0, 0))
+    private let levelLock = OSAllocatedUnfairLock<(inputs: [Float], system: Float)>(initialState: (inputs: [0, 0, 0], system: 0))
     private var levelTimer: Timer?
 
-    // MARK: - Microphone EQ
+    // MARK: - Input EQ
 
-    var microphoneLowGain: Double = 0.0 {
+    var inputLowGains: [Double] = [0.0, 0.0, 0.0] {
         didSet { updateEQ() }
     }
-    var microphoneMidGain: Double = 0.0 {
+    var inputMidGains: [Double] = [0.0, 0.0, 0.0] {
         didSet { updateEQ() }
     }
-    var microphoneHighGain: Double = 0.0 {
+    var inputHighGains: [Double] = [0.0, 0.0, 0.0] {
         didSet { updateEQ() }
     }
 
@@ -84,14 +86,7 @@ final class AudioMixer: @unchecked Sendable {
 
     // MARK: - Input/output devices
 
-    var selectedInputDeviceID: String? {
-        didSet {
-            guard oldValue != self.selectedInputDeviceID else { return }
-            self.microphoneCapture?.deviceID = self.selectedInputDeviceID
-            settings?.defaultInputDeviceID = self.selectedInputDeviceID
-            audioMixerLogger.info("Selected input device: \(self.selectedInputDeviceID ?? "default", privacy: .public)")
-        }
-    }
+    var selectedInputDeviceIDs: [String?] = [nil, nil, nil]
 
     var selectedOutputDeviceID: AudioDeviceID? {
         didSet {
@@ -100,6 +95,84 @@ final class AudioMixer: @unchecked Sendable {
             AudioDeviceManager.setDefaultOutputDevice(selectedOutputDeviceID)
             settings?.defaultOutputDeviceID = selectedOutputDeviceID
         }
+    }
+
+    // MARK: - Input channel accessors
+
+    /// Number of independent hardware input channels supported by the mixer.
+    static let inputChannelCount = 3
+
+    func inputDeviceID(at index: Int) -> String? {
+        guard (0..<Self.inputChannelCount).contains(index) else { return nil }
+        return selectedInputDeviceIDs[index]
+    }
+
+    func setInputDeviceID(_ deviceID: String?, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        guard selectedInputDeviceIDs[index] != deviceID else { return }
+        selectedInputDeviceIDs[index] = deviceID
+        microphoneCaptures[index].deviceID = deviceID
+        persistInputDefaults()
+        audioMixerLogger.info("Input \(index + 1) device: \(deviceID ?? "default", privacy: .public)")
+    }
+
+    func inputVolume(at index: Int) -> Double {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        return inputVolumes[index]
+    }
+
+    func setInputVolume(_ volume: Double, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputVolumes[index] = volume
+        persistInputDefaults()
+    }
+
+    func inputLowGain(at index: Int) -> Double {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        return inputLowGains[index]
+    }
+
+    func setInputLowGain(_ gain: Double, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputLowGains[index] = gain
+        persistInputDefaults()
+    }
+
+    func inputMidGain(at index: Int) -> Double {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        return inputMidGains[index]
+    }
+
+    func setInputMidGain(_ gain: Double, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputMidGains[index] = gain
+        persistInputDefaults()
+    }
+
+    func inputHighGain(at index: Int) -> Double {
+        guard (0..<Self.inputChannelCount).contains(index) else { return 0 }
+        return inputHighGains[index]
+    }
+
+    func setInputHighGain(_ gain: Double, at index: Int) {
+        guard (0..<Self.inputChannelCount).contains(index) else { return }
+        inputHighGains[index] = gain
+        persistInputDefaults()
+    }
+
+    private func persistInputDefaults() {
+        guard let settings else { return }
+        var channels = settings.inputChannels
+        for index in 0..<Self.inputChannelCount {
+            channels[index] = AppSettings.InputChannelSettings(
+                deviceID: selectedInputDeviceIDs[index],
+                volume: inputVolumes[index],
+                lowGain: inputLowGains[index],
+                midGain: inputMidGains[index],
+                highGain: inputHighGains[index]
+            )
+        }
+        settings.inputChannels = channels
     }
 
     var availableInputDevices: [AVCaptureDevice] {
@@ -117,18 +190,19 @@ final class AudioMixer: @unchecked Sendable {
     // MARK: - Engine nodes
 
     private let engine = AVAudioEngine()
-    private let microphoneRing = AudioRingBuffer(capacity: 48000 * 2 * 2)
     private let systemRing = AudioRingBuffer(capacity: 48000 * 2 * 2)
-    private var microphoneSourceNode: AVAudioSourceNode?
+    private var inputRings: [AudioRingBuffer] = []
+    private var inputSourceNodes: [AVAudioSourceNode] = []
     private var systemSourceNode: AVAudioSourceNode?
-    @ObservationIgnored private var microphoneEQNode: AVAudioUnitEQ?
+    @ObservationIgnored private var inputEQNodes: [AVAudioUnitEQ] = []
     @ObservationIgnored private var systemEQNode: AVAudioUnitEQ?
     private let mixerFormat = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
-    private var microphoneCapture: MicrophoneCapture?
+    private var microphoneCaptures: [MicrophoneCapture] = []
 
     init(settings: AppSettings? = nil) {
         self.settings = settings
-        microphoneCapture = MicrophoneCapture(ring: microphoneRing)
+        inputRings = (0..<Self.inputChannelCount).map { _ in AudioRingBuffer(capacity: 48000 * 2 * 2) }
+        microphoneCaptures = inputRings.map { MicrophoneCapture(ring: $0) }
         loadDefaults()
         setupEngine()
     }
@@ -139,11 +213,18 @@ final class AudioMixer: @unchecked Sendable {
 
     private func loadDefaults() {
         guard let settings else { return }
-        microphoneVolume = settings.defaultMicrophoneVolume
+        let channels = settings.inputChannels
+        for index in 0..<Self.inputChannelCount {
+            selectedInputDeviceIDs[index] = channels[index].deviceID
+            microphoneCaptures[index].deviceID = channels[index].deviceID
+            inputVolumes[index] = channels[index].volume
+            inputLowGains[index] = channels[index].lowGain
+            inputMidGains[index] = channels[index].midGain
+            inputHighGains[index] = channels[index].highGain
+        }
         systemVolume = settings.defaultSystemVolume
         masterVolume = settings.defaultMasterVolume
         isOutputMuted = settings.defaultOutputMuted
-        selectedInputDeviceID = settings.defaultInputDeviceID
         selectedOutputDeviceID = settings.defaultOutputDeviceID
     }
 
@@ -153,19 +234,24 @@ final class AudioMixer: @unchecked Sendable {
         let mixer = engine.mainMixerNode
         let output = engine.outputNode
 
-        // Microphone source node.
-        let micSource = makeSourceNode(ring: microphoneRing, volumeProvider: { [weak self] in Float(self?.microphoneVolume ?? 1.0) })
-        self.microphoneSourceNode = micSource
-        engine.attach(micSource)
+        // Input source nodes + EQ (one per hardware input channel).
+        for index in 0..<Self.inputChannelCount {
+            let ring = inputRings[index]
+            let source = makeSourceNode(ring: ring, volumeProvider: { [weak self] in Float(self?.inputVolumes[index] ?? 0) })
+            inputSourceNodes.append(source)
+            engine.attach(source)
 
-        // Microphone EQ.
-        let micEQ = makeEQNode()
-        self.microphoneEQNode = micEQ
-        engine.attach(micEQ)
-        engine.connect(micSource, to: micEQ, format: mixerFormat)
-        engine.connect(micEQ, to: mixer, format: mixerFormat)
-        installLevelTap(on: micEQ) { [weak self] level in
-            self?.levelLock.withLock { $0.microphone = level }
+            let eq = makeEQNode()
+            inputEQNodes.append(eq)
+            engine.attach(eq)
+            engine.connect(source, to: eq, format: mixerFormat)
+            engine.connect(eq, to: mixer, format: mixerFormat)
+            installLevelTap(on: eq) { [weak self] level in
+                self?.levelLock.withLock { state in
+                    guard index < state.inputs.count else { return }
+                    state.inputs[index] = level
+                }
+            }
         }
 
         // System audio source node.
@@ -227,10 +313,12 @@ final class AudioMixer: @unchecked Sendable {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             let raw = self.levelLock.withLock { $0 }
-            self.microphoneLevel = raw.microphone
+            self.microphoneLevel = raw.inputs.max() ?? 0
             self.systemLevel = raw.system
-            let combined = (raw.microphone * Float(self.microphoneVolume)
-                          + raw.system * Float(self.systemVolume))
+            let inputSum = zip(raw.inputs, self.inputVolumes).reduce(Float(0)) { sum, pair in
+                sum + pair.0 * Float(pair.1)
+            }
+            let combined = inputSum + raw.system * Float(self.systemVolume)
             self.outputLevel = self.isOutputMuted ? 0 : combined * Float(self.masterVolume)
         }
     }
@@ -292,7 +380,7 @@ final class AudioMixer: @unchecked Sendable {
     func start() throws {
         guard !engine.isRunning else { return }
         try engine.start()
-        microphoneCapture?.start()
+        for capture in microphoneCaptures { capture.start() }
         DispatchQueue.main.async { [weak self] in
             self?.isRunning = true
         }
@@ -302,7 +390,7 @@ final class AudioMixer: @unchecked Sendable {
 
     func stop() {
         engine.stop()
-        microphoneCapture?.stop()
+        for capture in microphoneCaptures { capture.stop() }
         DispatchQueue.main.async { [weak self] in
             self?.isRunning = false
             self?.microphoneLevel = 0
@@ -311,7 +399,7 @@ final class AudioMixer: @unchecked Sendable {
         }
         levelTimer?.invalidate()
         levelLock.withLock {
-            $0.microphone = 0
+            $0.inputs = [0, 0, 0]
             $0.system = 0
         }
         audioMixerLogger.info("Audio engine stopped")
@@ -414,10 +502,11 @@ final class AudioMixer: @unchecked Sendable {
     }
 
     private func updateEQ() {
-        if let micEQ = microphoneEQNode {
-            micEQ.bands[0].gain = Float(microphoneLowGain)
-            micEQ.bands[1].gain = Float(microphoneMidGain)
-            micEQ.bands[2].gain = Float(microphoneHighGain)
+        for index in inputEQNodes.indices {
+            let eq = inputEQNodes[index]
+            eq.bands[0].gain = Float(inputLowGains[index])
+            eq.bands[1].gain = Float(inputMidGains[index])
+            eq.bands[2].gain = Float(inputHighGains[index])
         }
         if let sysEQ = systemEQNode {
             sysEQ.bands[0].gain = Float(systemLowGain)

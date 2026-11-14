@@ -34,13 +34,12 @@ final class AppSettings: @unchecked Sendable {
         case recordingAutoSplitMinutes
         case recordingMinFreeSpaceMB
         case hideDesktopIconsDuringCapture
-        case defaultInputDeviceID
         case defaultOutputDeviceID
-        case defaultMicrophoneVolume
         case defaultSystemVolume
         case defaultMasterVolume
         case defaultOutputMuted
         case audioBitrate
+        case inputChannelSettings
         case savedLayerDefaults
         case showStyles
         case selectedShowStyleID
@@ -314,12 +313,6 @@ final class AppSettings: @unchecked Sendable {
 
     // MARK: - Audio defaults
 
-    /// Last-selected audio input device unique ID. nil means "System Default".
-    var defaultInputDeviceID: String? {
-        get { defaults.string(forKey: Key.defaultInputDeviceID.rawValue) }
-        set { defaults.set(newValue, forKey: Key.defaultInputDeviceID.rawValue) }
-    }
-
     /// Last-selected audio output device ID. nil means "System Default".
     var defaultOutputDeviceID: UInt32? {
         get {
@@ -333,12 +326,6 @@ final class AppSettings: @unchecked Sendable {
                 defaults.removeObject(forKey: Key.defaultOutputDeviceID.rawValue)
             }
         }
-    }
-
-    /// Default microphone channel volume (0...2).
-    var defaultMicrophoneVolume: Double {
-        get { defaults.object(forKey: Key.defaultMicrophoneVolume.rawValue) as? Double ?? 1.0 }
-        set { defaults.set(newValue, forKey: Key.defaultMicrophoneVolume.rawValue) }
     }
 
     /// Default system-audio channel volume (0...2).
@@ -364,6 +351,52 @@ final class AppSettings: @unchecked Sendable {
     var audioBitrate: Int {
         get { defaults.object(forKey: Key.audioBitrate.rawValue) as? Int ?? 384_000 }
         set { defaults.set(newValue, forKey: Key.audioBitrate.rawValue) }
+    }
+
+    // MARK: - Multi-channel input defaults
+
+    /// Settings for each hardware audio input channel. FreeStage supports three
+    /// independent input channels that are mixed together alongside system audio.
+    struct InputChannelSettings: Codable, Equatable {
+        var deviceID: String?
+        var volume: Double
+        var lowGain: Double
+        var midGain: Double
+        var highGain: Double
+
+        init(deviceID: String? = nil, volume: Double = 1.0, lowGain: Double = 0.0, midGain: Double = 0.0, highGain: Double = 0.0) {
+            self.deviceID = deviceID
+            self.volume = volume
+            self.lowGain = lowGain
+            self.midGain = midGain
+            self.highGain = highGain
+        }
+    }
+
+    private static let defaultInputChannels: [InputChannelSettings] = [
+        InputChannelSettings(deviceID: nil, volume: 1.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0),
+        InputChannelSettings(deviceID: nil, volume: 0.0, lowGain: 0.0, midGain: 0.0, highGain: 0.0)
+    ]
+
+    /// Persisted settings for the three independent input channels.
+    var inputChannels: [InputChannelSettings] {
+        get {
+            guard let data = defaults.data(forKey: Key.inputChannelSettings.rawValue),
+                  let decoded = try? JSONDecoder().decode([InputChannelSettings].self, from: data) else {
+                return Self.defaultInputChannels
+            }
+            var channels = decoded
+            while channels.count < Self.defaultInputChannels.count {
+                channels.append(InputChannelSettings())
+            }
+            return Array(channels.prefix(Self.defaultInputChannels.count))
+        }
+        set {
+            if let data = try? JSONEncoder().encode(Array(newValue.prefix(Self.defaultInputChannels.count))) {
+                defaults.set(data, forKey: Key.inputChannelSettings.rawValue)
+            }
+        }
     }
 
     /// Generate a unique filename inside `recordingDirectory`, creating the

@@ -34,9 +34,7 @@ struct AudioMonitorView: View {
                     label: "MIC",
                     level: Double(mixer.microphoneLevel),
                     isMuted: false,
-                    deviceName: mixer.selectedInputDeviceID == nil
-                        ? "Default"
-                        : (mixer.availableInputDevices.first { $0.uniqueID == mixer.selectedInputDeviceID }?.localizedName ?? "Input")
+                    deviceName: activeInputName(mixer: mixer)
                 )
 
                 Divider()
@@ -77,7 +75,7 @@ struct AudioMonitorView: View {
         .frame(width: 220)
         .sheet(isPresented: $showingAudioMixer) {
             AudioMixerView()
-                .frame(minWidth: 320, idealWidth: 360, minHeight: 520, idealHeight: 640)
+                .frame(minWidth: 460, idealWidth: 520, minHeight: 880, idealHeight: 980)
         }
         .task {
             // Try to start the engine automatically when the monitor appears.
@@ -174,6 +172,16 @@ struct AudioMonitorView: View {
         let minutes = (total % 3600) / 60
         let seconds = total % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func activeInputName(mixer: AudioMixer) -> String {
+        let activeIDs = mixer.selectedInputDeviceIDs.compactMap { $0 }
+        guard !activeIDs.isEmpty else { return "Default" }
+        if activeIDs.count == 1,
+           let device = mixer.availableInputDevices.first(where: { $0.uniqueID == activeIDs.first }) {
+            return device.localizedName
+        }
+        return "\(activeIDs.count) Inputs"
     }
 }
 

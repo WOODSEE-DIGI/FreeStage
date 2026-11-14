@@ -3,7 +3,8 @@
 //  FreeStage
 //
 //  Audio mixer panel: input/output device selection, per-channel volume and EQ,
-//  master volume, and recording status.
+//  master volume, and recording status. Supports three independent input
+//  channels plus system audio.
 //
 
 import SwiftUI
@@ -26,21 +27,9 @@ struct AudioMixerView: View {
                             isMuted: $mixer.isOutputMuted
                         )
 
-                        inputSection(
-                            inputDevices: mixer.availableInputDevices,
-                            selectedInputDeviceID: $mixer.selectedInputDeviceID
-                        )
-
                         Divider()
 
-                        channelSection(
-                            icon: "mic.fill",
-                            label: "Microphone",
-                            volume: $mixer.microphoneVolume,
-                            lowGain: $mixer.microphoneLowGain,
-                            midGain: $mixer.microphoneMidGain,
-                            highGain: $mixer.microphoneHighGain
-                        )
+                        inputChannelsSection(mixer: mixer)
 
                         Divider()
 
@@ -95,6 +84,95 @@ struct AudioMixerView: View {
 
     // MARK: - Sections
 
+    private func inputChannelsSection(mixer: AudioMixer) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Image(systemName: "mic.fill")
+                Text("Input Channels")
+                    .font(.headline)
+                Spacer()
+            }
+
+            ForEach(0..<AudioMixer.inputChannelCount, id: \.self) { index in
+                inputChannelRow(mixer: mixer, index: index)
+                if index < AudioMixer.inputChannelCount - 1 {
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private func inputChannelRow(mixer: AudioMixer, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Input \(index + 1)")
+                    .font(.subheadline.bold())
+                Spacer()
+                Picker("Input \(index + 1)", selection: inputDeviceBinding(mixer: mixer, index: index)) {
+                    Text("Off").tag(nil as String?)
+                    ForEach(mixer.availableInputDevices, id: \.uniqueID) { device in
+                        Text(device.localizedName).tag(device.uniqueID as String?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("Volume")
+                        .font(.caption)
+                    Spacer()
+                    Text("\(mixer.inputVolume(at: index), specifier: "%.2f")")
+                        .font(.caption.monospacedDigit())
+                }
+                Slider(value: inputVolumeBinding(mixer: mixer, index: index), in: 0...2, step: 0.01)
+            }
+
+            HStack(spacing: 8) {
+                compactEQSlider(label: "Low", value: inputLowGainBinding(mixer: mixer, index: index))
+                compactEQSlider(label: "Mid", value: inputMidGainBinding(mixer: mixer, index: index))
+                compactEQSlider(label: "High", value: inputHighGainBinding(mixer: mixer, index: index))
+            }
+        }
+    }
+
+    private func inputDeviceBinding(mixer: AudioMixer, index: Int) -> Binding<String?> {
+        Binding(
+            get: { mixer.inputDeviceID(at: index) },
+            set: { mixer.setInputDeviceID($0, at: index) }
+        )
+    }
+
+    private func inputVolumeBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputVolume(at: index) },
+            set: { mixer.setInputVolume($0, at: index) }
+        )
+    }
+
+    private func inputLowGainBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputLowGain(at: index) },
+            set: { mixer.setInputLowGain($0, at: index) }
+        )
+    }
+
+    private func inputMidGainBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputMidGain(at: index) },
+            set: { mixer.setInputMidGain($0, at: index) }
+        )
+    }
+
+    private func inputHighGainBinding(mixer: AudioMixer, index: Int) -> Binding<Double> {
+        Binding(
+            get: { mixer.inputHighGain(at: index) },
+            set: { mixer.setInputHighGain($0, at: index) }
+        )
+    }
+
     private func outputSection(
         outputDevices: [AudioDevice],
         outputDeviceBinding: Binding<AudioDevice?>,
@@ -118,29 +196,6 @@ struct AudioMixerView: View {
             .labelsHidden()
 
             Toggle("Mute Output", isOn: isMuted)
-        }
-    }
-
-    private func inputSection(
-        inputDevices: [AVCaptureDevice],
-        selectedInputDeviceID: Binding<String?>
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "mic.fill")
-                Text("Input Device")
-                    .font(.headline)
-                Spacer()
-            }
-
-            Picker("Input", selection: selectedInputDeviceID) {
-                Text("System Default").tag(nil as String?)
-                ForEach(inputDevices, id: \.uniqueID) { device in
-                    Text(device.localizedName).tag(device.uniqueID as String?)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
         }
     }
 
@@ -171,23 +226,24 @@ struct AudioMixerView: View {
                 Slider(value: volume, in: 0...2, step: 0.01)
             }
 
-            HStack(spacing: 12) {
-                eqSlider(label: "Low", value: lowGain)
-                eqSlider(label: "Mid", value: midGain)
-                eqSlider(label: "High", value: highGain)
+            HStack(spacing: 8) {
+                compactEQSlider(label: "Low", value: lowGain)
+                compactEQSlider(label: "Mid", value: midGain)
+                compactEQSlider(label: "High", value: highGain)
             }
         }
     }
 
-    private func eqSlider(label: String, value: Binding<Double>) -> some View {
-        VStack(spacing: 4) {
-            Text("\(value.wrappedValue, specifier: "%.1f") dB")
-                .font(.caption2.monospacedDigit())
+    private func compactEQSlider(label: String, value: Binding<Double>) -> some View {
+        VStack(spacing: 2) {
+            HStack {
+                Text(label)
+                    .font(.caption2)
+                Spacer()
+                Text("\(value.wrappedValue, specifier: "%.1f") dB")
+                    .font(.caption2.monospacedDigit())
+            }
             Slider(value: value, in: -12...12, step: 0.5)
-                .rotationEffect(.degrees(-90))
-                .frame(width: 24, height: 80)
-            Text(label)
-                .font(.caption2)
         }
         .frame(maxWidth: .infinity)
     }
