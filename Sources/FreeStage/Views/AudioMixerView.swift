@@ -10,57 +10,94 @@
 import SwiftUI
 import AVFoundation
 
+enum AudioMixerFocus: Hashable, Identifiable {
+    case inputs
+    case system
+    case master
+
+    var id: Self { self }
+}
+
 struct AudioMixerView: View {
     @Environment(\.audioMixer) private var mixer
     @Environment(\.recordingService) private var recordingService
+    @Environment(\.dismiss) private var dismiss
+    var focus: AudioMixerFocus?
 
     var body: some View {
         Group {
             if let mixer = mixer, let recordingService = recordingService {
                 @Bindable var mixer = mixer
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        outputSection(
-                            outputDevices: mixer.availableOutputDevices,
-                            outputDeviceBinding: outputDeviceBinding(mixer: mixer),
-                            isMuted: $mixer.isOutputMuted
-                        )
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Audio Mixer")
+                            .font(.headline)
+                        Spacer()
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .keyboardShortcut(.return, modifiers: [.command])
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
 
-                        Divider()
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                            outputSection(
+                                outputDevices: mixer.availableOutputDevices,
+                                outputDeviceBinding: outputDeviceBinding(mixer: mixer),
+                                isMuted: $mixer.isOutputMuted
+                            )
 
-                        inputChannelsSection(mixer: mixer)
+                            Divider()
 
-                        Divider()
+                            inputChannelsSection(mixer: mixer)
+                                .id(AudioMixerFocus.inputs)
 
-                        channelSection(
-                            icon: "speaker.wave.2.fill",
-                            label: "System Audio",
-                            volume: $mixer.systemVolume,
-                            lowGain: $mixer.systemLowGain,
-                            midGain: $mixer.systemMidGain,
-                            highGain: $mixer.systemHighGain
-                        )
+                            Divider()
 
-                        Divider()
+                            channelSection(
+                                icon: "speaker.wave.2.fill",
+                                label: "System Audio",
+                                volume: $mixer.systemVolume,
+                                lowGain: $mixer.systemLowGain,
+                                midGain: $mixer.systemMidGain,
+                                highGain: $mixer.systemHighGain
+                            )
+                            .id(AudioMixerFocus.system)
 
-                        masterSection(volume: $mixer.masterVolume)
+                            Divider()
 
-                        Divider()
+                            masterSection(volume: $mixer.masterVolume)
+                                .id(AudioMixerFocus.master)
 
-                        StreamingStatusView()
+                            Divider()
 
-                        Divider()
+                            StreamingStatusView()
 
-                        recordingStatusSection(recordingService: recordingService)
+                            Divider()
 
-                        Divider()
+                            recordingStatusSection(recordingService: recordingService)
 
-                        engineSection(isRunning: mixer.isRunning) {
-                            toggleAudioEngine(mixer: mixer)
+                            Divider()
+
+                            engineSection(isRunning: mixer.isRunning) {
+                                toggleAudioEngine(mixer: mixer)
+                            }
+                        }
+                        .padding()
+                    }
+                        .onAppear {
+                            if let focus {
+                                withAnimation {
+                                    proxy.scrollTo(focus, anchor: .top)
+                                }
+                            }
                         }
                     }
-                    .padding()
                 }
             } else {
                 Text("Audio services not available")

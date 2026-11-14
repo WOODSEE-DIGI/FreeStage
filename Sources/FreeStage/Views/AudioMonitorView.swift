@@ -14,7 +14,7 @@ struct AudioMonitorView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.audioMixer) private var mixer
     @Environment(\.recordingService) private var recordingService
-    @State private var showingAudioMixer = false
+    @State private var audioMixerFocus: AudioMixerFocus?
 
     var body: some View {
         Group {
@@ -30,33 +30,36 @@ struct AudioMonitorView: View {
     private func monitorBody(mixer: AudioMixer) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                channelMeter(
+                channelMeterButton(
                     label: "MIC",
                     level: Double(mixer.microphoneLevel),
                     isMuted: false,
-                    deviceName: activeInputName(mixer: mixer)
+                    deviceName: activeInputName(mixer: mixer),
+                    focus: .inputs
                 )
 
                 Divider()
                     .background(theme.border.opacity(0.4))
 
-                channelMeter(
+                channelMeterButton(
                     label: "SYS",
                     level: Double(mixer.systemLevel),
                     isMuted: false,
-                    deviceName: "System"
+                    deviceName: "System",
+                    focus: .system
                 )
 
                 Divider()
                     .background(theme.border.opacity(0.4))
 
-                channelMeter(
+                channelMeterButton(
                     label: "OUT",
                     level: Double(mixer.outputLevel),
                     isMuted: mixer.isOutputMuted,
                     deviceName: mixer.selectedOutputDeviceID == nil
                         ? "Default"
-                        : (mixer.availableOutputDevices.first { $0.id == mixer.selectedOutputDeviceID }?.name ?? "Output")
+                        : (mixer.availableOutputDevices.first { $0.id == mixer.selectedOutputDeviceID }?.name ?? "Output"),
+                    focus: .master
                 )
             }
 
@@ -73,8 +76,8 @@ struct AudioMonitorView: View {
                 .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         )
         .frame(width: 220)
-        .sheet(isPresented: $showingAudioMixer) {
-            AudioMixerView()
+        .sheet(item: $audioMixerFocus, onDismiss: { audioMixerFocus = nil }) { focus in
+            AudioMixerView(focus: focus)
                 .frame(minWidth: 460, idealWidth: 520, minHeight: 880, idealHeight: 980)
         }
         .task {
@@ -88,6 +91,27 @@ struct AudioMonitorView: View {
                 audioMonitorLogger.error("Auto-start audio engine failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func channelMeterButton(
+        label: String,
+        level: Double,
+        isMuted: Bool,
+        deviceName: String,
+        focus: AudioMixerFocus
+    ) -> some View {
+        Button {
+            audioMixerFocus = focus
+        } label: {
+            channelMeter(
+                label: label,
+                level: level,
+                isMuted: isMuted,
+                deviceName: deviceName
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Tap to adjust \(label) settings")
     }
 
     private func channelMeter(
@@ -119,6 +143,7 @@ struct AudioMonitorView: View {
                 .lineLimit(1)
                 .frame(width: 58)
         }
+        .contentShape(Rectangle())
     }
 
     private func footer(mixer: AudioMixer) -> some View {
@@ -140,7 +165,7 @@ struct AudioMonitorView: View {
                 .help("Start audio engine")
             } else {
                 Button {
-                    showingAudioMixer = true
+                    audioMixerFocus = .inputs
                 } label: {
                     Image(systemName: "waveform")
                         .font(.system(size: 14, weight: .semibold))
