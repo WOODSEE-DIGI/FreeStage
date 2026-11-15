@@ -957,6 +957,10 @@ struct AssembleToolsSidebar: View {
             if selectedShapeTool == .rectangle {
                 cornerRadiusOptions
             }
+
+            if selectedLayerIndex != nil {
+                borderOptions
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1181,6 +1185,45 @@ struct AssembleToolsSidebar: View {
         }
     }
 
+    private var borderOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Border")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+
+            Toggle("Enabled", isOn: borderEnabledBinding)
+                .toggleStyle(.switch)
+                .foregroundStyle(theme.text)
+
+            if borderEnabledBinding.wrappedValue {
+                colorRow("Color", color: borderColorBinding)
+
+                HStack(spacing: 8) {
+                    Text("Width")
+                        .lineLimit(1)
+                        .frame(width: 44, alignment: .leading)
+                    Slider(value: borderWidthBinding, in: 0...64, step: 1)
+                    Text("\(Int(borderWidthBinding.wrappedValue)) px")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Radius")
+                        .lineLimit(1)
+                        .frame(width: 44, alignment: .leading)
+                    Slider(value: borderCornerRadiusBinding, in: 0...200, step: 1)
+                    Text("\(Int(borderCornerRadiusBinding.wrappedValue)) px")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
     private func colorRow(_ label: String, color: Binding<CGColorComponents>) -> some View {
         HStack(spacing: 8) {
             Text(label)
@@ -1367,6 +1410,60 @@ struct AssembleToolsSidebar: View {
                 transform.scaleX *= ratio
                 transform.scaleY *= ratio
                 layers[layerIndex].transform = transform
+            }
+        )
+    }
+
+    private var borderEnabledBinding: Binding<Bool> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedLayerIndex else { return false }
+                return layers[layerIndex].border.isEnabled
+            },
+            set: { newValue in
+                guard let layerIndex = selectedLayerIndex else { return }
+                layers[layerIndex].border.isEnabled = newValue
+            }
+        )
+    }
+
+    private var borderColorBinding: Binding<CGColorComponents> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedLayerIndex else {
+                    return CGColorComponents(r: 1, g: 1, b: 1, a: 1)
+                }
+                return layers[layerIndex].border.color
+            },
+            set: { newValue in
+                guard let layerIndex = selectedLayerIndex else { return }
+                layers[layerIndex].border.color = newValue
+            }
+        )
+    }
+
+    private var borderWidthBinding: Binding<Double> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedLayerIndex else { return 0 }
+                return layers[layerIndex].border.width
+            },
+            set: { newValue in
+                guard let layerIndex = selectedLayerIndex else { return }
+                layers[layerIndex].border.width = newValue
+            }
+        )
+    }
+
+    private var borderCornerRadiusBinding: Binding<Double> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedLayerIndex else { return 0 }
+                return layers[layerIndex].border.cornerRadius
+            },
+            set: { newValue in
+                guard let layerIndex = selectedLayerIndex else { return }
+                layers[layerIndex].border.cornerRadius = newValue
             }
         )
     }

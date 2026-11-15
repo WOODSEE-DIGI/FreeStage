@@ -45,11 +45,22 @@ struct LayerRenderer: @unchecked Sendable {
         encoder.setTexture(outputTexture, index: 1)
         encoder.setTexture(backgroundTexture ?? placeholderTexture, index: 2)
 
+        let border = layer.border
+        let borderColor = border.color
         var params = LayerParams(
             position: SIMD2<Float>(Float(layer.transform.x), Float(layer.transform.y)),
             scale: SIMD2<Float>(Float(layer.transform.scaleX), Float(layer.transform.scaleY)),
             opacity: Float(layer.opacity),
-            preserveAspect: layer.source.preservesAspect ? 1.0 : 0.0
+            preserveAspect: layer.source.preservesAspect ? 1.0 : 0.0,
+            borderColor: SIMD4<Float>(
+                Float(borderColor.r),
+                Float(borderColor.g),
+                Float(borderColor.b),
+                Float(borderColor.a)
+            ),
+            borderWidth: Float(border.width),
+            borderCornerRadius: Float(border.cornerRadius),
+            borderEnabled: border.isEnabled ? 1.0 : 0.0
         )
         encoder.setBytes(&params, length: MemoryLayout<LayerParams>.stride, index: 0)
 
@@ -96,6 +107,10 @@ private struct LayerParams {
     var scale: SIMD2<Float>
     var opacity: Float
     var preserveAspect: Float
+    var borderColor: SIMD4<Float>
+    var borderWidth: Float
+    var borderCornerRadius: Float
+    var borderEnabled: Float
 }
 
 /// Must stay byte-compatible with the struct declared in Composite.metal.

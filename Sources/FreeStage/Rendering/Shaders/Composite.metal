@@ -21,6 +21,14 @@ struct LayerParams {
     /// 1.0 to aspect-fit the source texture inside the layer rectangle,
     /// 0.0 to stretch it to fill the rectangle.
     float preserveAspect;
+    /// Border color (RGBA).
+    float4 borderColor;
+    /// Border width in pixels.
+    float borderWidth;
+    /// Border corner radius in pixels.
+    float borderCornerRadius;
+    /// 1.0 when the border should be drawn.
+    float borderEnabled;
 };
 
 struct FilterParams {
@@ -266,6 +274,11 @@ static float4 applyChromaKey(float4 src, constant FilterParams &filters) {
     return float4(clamp(spill, 0.0, 1.0), src.a * matte);
 }
 
+static float roundedRectSDF(float2 p, float2 halfSize, float radius) {
+    float2 q = abs(p) - halfSize + float2(radius);
+    return length(max(q, 0.0)) - radius;
+}
+
 /// Composite one source layer over the current output using source-over alpha.
 /// When a chroma-key filter carries a backgroundSource, the background is
 /// cover-fitted to the layer's on-screen bounds and used as the destination
@@ -308,39 +321,59 @@ kernel void compositeLayer(
         }
     }
 
-    float2 sourceUV = (outputUV - params.position) / displayScale + 0.5;
+    bool borderEnabled = params.borderEnabled > 0.5;
+    float pixelThickness = max(params.borderWidth, 0.0);
+    float pixelRadius = max(params.borderCornerRadius, 0.0);
 
-    // Outside the layer bounds: leave the existing output untouched.
-    if (sourceUV.x < 0.0 || sourceUV.x > 1.0 || sourceUV.y < 0.0 || sourceUV.y > 1.0) {
+    // Work in pixel space so border width and corner radius are uniform on
+    // screen regardless of layer scale or output aspect.
+    float2 pixelP = (outputUV - params.position) * outputSize;
+    float2 pixelHalfSize = displayScale * outputSize * 0.5;
+    float maxRadius = min(pixelHalfSize.x, pixelHalfSize.y);
+    pixelRadius = min(pixelRadius, maxRadius);
+
+    // Anti-alias over ~1 pixel.
+    float aa = 1.0;
+
+    float dInner = roundedRectSDF(pixelP, pixelHalfSize, pixelRadius);
+    float innerMask = 1.0 - smoothstep(0.0, aa, dInner);
+
+    // No border and outside the layer shape: leave the existing output alone.
+    if (!borderEnabled && innerMask <= 0.0) {
         return;
     }
 
+    float2 layerUV = pixelP / (displayScale * outputSize) + 0.5;
+
     bool hasBackground = (filters.flags & FLAG_CHROMA_KEY_BACKGROUND) != 0u;
 
-    // Sample and filter the source layer.
-    uint2 sourceCoord = uint2(clamp(sourceUV * sourceSize, 0.0, sourceSize - 1.0));
-    float4 src = source.read(sourceCoord);
+    // Sample and filter the source layer (only inside the rounded layer shape).
+    float4 src = float4(0.0);
+    if (innerMask > 0.0) {
+        uint2 sourceCoord = uint2(clamp(layerUV * sourceSize, 0.0, sourceSize - 1.0));
+        src = source.read(sourceCoord);
 
-    if ((filters.flags & FLAG_COLOR_CORRECTION) != 0u) {
-        src.rgb = applyColorCorrection(src.rgb, filters);
+        if ((filters.flags & FLAG_COLOR_CORRECTION) != 0u) {
+            src.rgb = applyColorCorrection(src.rgb, filters);
+        }
+
+        if ((filters.flags & FLAG_CHROMA_KEY) != 0u) {
+            src = applyChromaKey(src, filters);
+        }
+
+        src.a *= params.opacity * innerMask;
+        // Premultiply so the source-over blend below is correct. Without this,
+        // a keyed-out pixel keeps its green RGB at alpha 0 and the background
+        // gets tinted/overwritten by green.
+        src.rgb *= src.a;
     }
-
-    if ((filters.flags & FLAG_CHROMA_KEY) != 0u) {
-        src = applyChromaKey(src, filters);
-    }
-
-    src.a *= params.opacity;
-    // Premultiply so the source-over blend below is correct. Without this,
-    // a keyed-out pixel keeps its green RGB at alpha 0 and the background
-    // gets tinted/overwritten by green.
-    src.rgb *= src.a;
 
     // Determine destination pixels. With a background, cover-fit it to the
     // layer's on-screen rectangle (using the layer-local UV) so the aspect
     // ratio is preserved, then apply independent pan/zoom from the chroma-key
     // filter. Without a background, read the existing output.
     float4 dst;
-    if (hasBackground) {
+    if (hasBackground && innerMask > 0.0) {
         float2 bgSize = float2(background.get_width(), background.get_height());
         float layerAspect = displayScale.x * outputSize.x / (displayScale.y * outputSize.y);
         float bgAspect = bgSize.x / bgSize.y;
@@ -350,7 +383,7 @@ kernel void compositeLayer(
         float2 bgCenter = float2(filters.bgPositionX, filters.bgPositionY);
         float zoom = max(filters.bgZoom, 0.01);
         float2 effectiveScale = coverScale * zoom;
-        float2 bgUV = (sourceUV - bgCenter) / effectiveScale + 0.5;
+        float2 bgUV = (layerUV - bgCenter) / effectiveScale + 0.5;
         bgUV = clamp(bgUV, 0.0, 1.0);
         uint2 bgCoord = uint2(bgUV * bgSize);
         dst = background.read(bgCoord);
@@ -358,8 +391,22 @@ kernel void compositeLayer(
         dst = output.read(gid);
     }
 
-    // Premultiplied source-over.
-    float4 result = src + dst * (1.0 - src.a);
+    // Border sits between the source and the existing output / background.
+    float4 border = float4(0.0);
+    if (borderEnabled && pixelThickness > 0.0) {
+        float dOuter = roundedRectSDF(pixelP, pixelHalfSize + pixelThickness, pixelRadius + pixelThickness);
+        float outerMask = 1.0 - smoothstep(0.0, aa, dOuter);
+        float borderMask = outerMask * (1.0 - innerMask);
+        if (borderMask > 0.0) {
+            border = params.borderColor;
+            border.a *= borderMask * params.opacity;
+            border.rgb *= border.a;
+        }
+    }
+
+    // Border behind source, source over everything.
+    float4 behindSource = border + dst * (1.0 - border.a);
+    float4 result = src + behindSource * (1.0 - src.a);
     output.write(result, gid);
 }
 
