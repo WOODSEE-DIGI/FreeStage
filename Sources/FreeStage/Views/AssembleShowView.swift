@@ -1421,15 +1421,40 @@ struct AssembleToolsSidebar: View {
 
     private func applyAspectRatioPreset(_ preset: AspectRatioPreset) {
         guard let layerIndex = selectedShapeIndex else { return }
-        let ratio = preset.ratio
-        var transform = layers[layerIndex].transform
-        let currentScale = sqrt(transform.scaleX * transform.scaleY)
-        transform.scaleX = currentScale * sqrt(ratio)
-        transform.scaleY = currentScale / sqrt(ratio)
+        let desiredRatio = preset.ratio
+        let internalRatio = aspectRatioOfSelectedLayer(at: layerIndex)
+        guard internalRatio > 0 else { return }
+
+        // finalRatio = internalRatio * (scaleX / scaleY)
+        // desired scale ratio = desiredRatio / internalRatio
+        let scaleRatio = desiredRatio / internalRatio
+        let currentTransform = layers[layerIndex].transform
+        let currentArea = max(currentTransform.scaleX * currentTransform.scaleY, 0.0001)
+        let newScaleY = sqrt(currentArea / scaleRatio)
+        let newScaleX = newScaleY * scaleRatio
+
+        var transform = currentTransform
+        transform.scaleX = newScaleX
+        transform.scaleY = newScaleY
         layers[layerIndex].transform = transform
+
         if isAspectRatioLocked {
-            lockedAspectRatio = ratio
+            lockedAspectRatio = scaleRatio
         }
+    }
+
+    private func aspectRatioOfSelectedLayer(at layerIndex: Int) -> Double {
+        guard case .drawing(let drawing) = layers[layerIndex].source,
+              let stroke = drawing.strokes.first,
+              stroke.points.count >= 2 else { return 1.0 }
+
+        let p1 = stroke.points[0]
+        let p2 = stroke.points[1]
+        let canvas = drawing.canvasSize
+        let width = abs(p2.x - p1.x) * canvas.width
+        let height = abs(p2.y - p1.y) * canvas.height
+        guard height > 0 else { return 1.0 }
+        return width / height
     }
 
     // MARK: - Actions
