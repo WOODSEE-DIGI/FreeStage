@@ -223,31 +223,7 @@ struct AssembleShowView: View {
                 }
             }
         } else if let segment = store.activeSegment {
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Segment Name", text: Binding(
-                    get: { segment.name },
-                    set: { newValue in
-                        store.updatePresenterSegment(id: segment.id) { $0.name = newValue }
-                    }
-                ))
-                .textFieldStyle(.roundedBorder)
-
-                Text("Type: \(segment.type.displayName)")
-                    .font(.caption)
-                    .foregroundStyle(theme.secondaryText)
-
-                Picker("Camera Angle", selection: Binding(
-                    get: { segment.cameraAngle },
-                    set: { newValue in
-                        store.updatePresenterSegment(id: segment.id) { $0.cameraAngle = newValue }
-                    }
-                )) {
-                    ForEach(PresenterCameraAngle.allCases) { angle in
-                        Text(angle.displayName).tag(angle)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
+            PresenterSegmentEditor(segment: segment)
         } else {
             Text("Select a cue or segment to edit its properties.")
                 .font(.caption)
@@ -339,7 +315,6 @@ struct AssembleShowView: View {
                     .font(.headline)
                     .foregroundStyle(theme.text)
                 Spacer()
-                addLayerMenu
             }
             .padding(12)
 
@@ -365,12 +340,16 @@ struct AssembleShowView: View {
 
     private var localLayersColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Cue Layers")
-                .font(.subheadline.bold())
-                .foregroundStyle(theme.text)
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+            HStack {
+                Text("Cue Layers")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(theme.text)
+                Spacer()
+                addLayerMenu
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             LayerStackView(
                 layers: activeLayersBinding,
