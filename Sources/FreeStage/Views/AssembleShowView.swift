@@ -26,8 +26,6 @@ struct AssembleShowView: View {
 
     // MARK: - Panel widths
 
-    private let leftColumnWidth: CGFloat = 320
-    private let rightColumnWidth: CGFloat = 360
     private let cueGridHeightFraction: CGFloat = 0.45
 
     var body: some View {
@@ -35,20 +33,11 @@ struct AssembleShowView: View {
             theme.background
                 .ignoresSafeArea()
 
-            HStack(spacing: 0) {
-                leftColumn
-                    .frame(width: leftColumnWidth)
-
-                Divider()
-
-                centreColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Divider()
-
-                rightColumn
-                    .frame(width: rightColumnWidth)
-            }
+            AssembleSplitView(
+                leftContent: AnyView(leftColumn),
+                centreContent: AnyView(centreColumn),
+                rightContent: AnyView(rightColumn)
+            )
         }
         .onChange(of: requiredCameraIDs) { _, _ in
             updateCameraCapture()
