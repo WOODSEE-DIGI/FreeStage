@@ -857,18 +857,121 @@ struct AssembleToolsSidebar: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(AppSettings.self) private var appSettings
     @State private var selectedTool: AssembleTool = .select
+    @State private var shapeOptions = ShapeToolOptions()
     var onLayerAdded: ((UUID) -> Void)?
 
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(AssembleTool.allCases) { tool in
-                ToolButton(tool: tool, isSelected: selectedTool == tool) {
-                    select(tool: tool)
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
+                ForEach(AssembleTool.allCases) { tool in
+                    ToolButton(tool: tool, isSelected: selectedTool == tool) {
+                        select(tool: tool)
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
+            if selectedTool.hasOptions {
+                Divider()
+                    .padding(.vertical, 12)
+
+                toolOptionsPanel
+                    .padding(.horizontal, 12)
+            }
+
             Spacer()
         }
-        .padding(.horizontal, 12)
+    }
+
+    private var toolOptionsPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(selectedTool.displayName) Options")
+                .font(.subheadline.bold())
+                .foregroundStyle(theme.text)
+
+            if selectedTool.supportsFill {
+                fillOptions
+            }
+
+            strokeOptions
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var fillOptions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Fill")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+
+            Picker("Fill Style", selection: $shapeOptions.fillStyle) {
+                ForEach(ShapeFillStyle.allCases) { style in
+                    Text(style.displayName).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch shapeOptions.fillStyle {
+            case .solid:
+                colorRow("Color", color: $shapeOptions.fillColor)
+            case .gradient:
+                colorRow("Start", color: $shapeOptions.gradientStartColor)
+                colorRow("End", color: $shapeOptions.gradientEndColor)
+                HStack {
+                    Text("Angle")
+                    Slider(value: $shapeOptions.gradientAngle, in: 0...360, step: 1)
+                    Text("\(Int(shapeOptions.gradientAngle))°")
+                        .monospacedDigit()
+                        .frame(width: 36, alignment: .trailing)
+                }
+            case .none:
+                EmptyView()
+            }
+        }
+    }
+
+    private var strokeOptions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(selectedTool == .line || selectedTool == .arrow ? "Line" : "Border")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+
+            Toggle("Enabled", isOn: $shapeOptions.strokeEnabled)
+                .foregroundStyle(theme.text)
+                .disabled(!selectedTool.canDisableStroke)
+
+            if shapeOptions.strokeEnabled {
+                colorRow("Color", color: $shapeOptions.strokeColor)
+
+                HStack {
+                    Text("Width")
+                    Slider(value: $shapeOptions.strokeWidth, in: 1...32, step: 1)
+                    Text("\(Int(shapeOptions.strokeWidth))")
+                        .monospacedDigit()
+                        .frame(width: 24, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private func colorRow(_ label: String, color: Binding<CGColorComponents>) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(theme.text)
+            Spacer()
+            ColorPicker("", selection: Binding(
+                get: {
+                    Color(rgb: RGBColor(r: color.wrappedValue.r, g: color.wrappedValue.g, b: color.wrappedValue.b))
+                },
+                set: { newValue in
+                    let rgb = RGBColor(color: newValue)
+                    color.wrappedValue = CGColorComponents(r: rgb.r, g: rgb.g, b: rgb.b, a: 1.0)
+                }
+            ))
+            .labelsHidden()
+            .frame(width: 44, height: 28)
+        }
     }
 
     private func select(tool: AssembleTool) {
@@ -878,7 +981,7 @@ struct AssembleToolsSidebar: View {
         case .select:
             break
         case .rectangle:
-            addRectangleLayer()
+            addShapeLayer(tool: .rectangle, name: "Rectangle")
         case .ellipse:
             addShapeLayer(tool: .ellipse, name: "Ellipse")
         case .line:
@@ -890,33 +993,13 @@ struct AssembleToolsSidebar: View {
         }
     }
 
-    private func addRectangleLayer() {
-        let style = appSettings.defaultShowStyle
-        let source = Source.color(style.primaryColor)
-        let transform = ItemTransform(
-            x: 0.5, y: 0.5,
-            scaleX: 0.3, scaleY: 0.3,
-            rotation: 0,
-            crop: .zero
-        )
-        if let id = store.addLayerToActiveCue(source: source, name: "Rectangle", transform: transform) {
-            onLayerAdded?(id)
-        }
-    }
-
     private func addShapeLayer(tool: DrawingTool, name: String) {
-        let style = appSettings.defaultShowStyle
-        let stroke = DrawingStroke(
-            points: defaultShapePoints(for: tool),
-            color: style.primaryColor,
-            width: 4,
-            tool: tool
-        )
+        let stroke = shapeOptions.stroke(tool: tool)
         let source = Source.drawing(DrawingSource(
             strokes: [stroke],
             tool: tool,
-            color: style.primaryColor,
-            brushWidth: 4
+            color: shapeOptions.strokeColor,
+            brushWidth: shapeOptions.strokeEnabled ? shapeOptions.strokeWidth : 4
         ))
         let transform = ItemTransform(
             x: 0.5, y: 0.5,
@@ -955,6 +1038,49 @@ struct AssembleToolsSidebar: View {
     }
 }
 
+/// Tool-level options for shape tools in the Assemble workspace.
+struct ShapeToolOptions {
+    var fillStyle: ShapeFillStyle = .solid
+    var fillColor: CGColorComponents = CGColorComponents(r: 1, g: 0, b: 0, a: 1)
+    var gradientStartColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1)
+    var gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1)
+    var gradientAngle: Double = 0
+    var strokeEnabled: Bool = true
+    var strokeColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1)
+    var strokeWidth: Double = 4
+
+    func stroke(tool: DrawingTool) -> DrawingStroke {
+        DrawingStroke(
+            points: defaultShapePoints(for: tool),
+            color: strokeEnabled ? strokeColor : fillColor,
+            width: strokeEnabled ? strokeWidth : 0,
+            tool: tool,
+            fillStyle: fillStyle,
+            fillColor: fillColor,
+            gradientStartColor: gradientStartColor,
+            gradientEndColor: gradientEndColor,
+            gradientAngle: gradientAngle
+        )
+    }
+
+    private func defaultShapePoints(for tool: DrawingTool) -> [DrawingPoint] {
+        switch tool {
+        case .rectangle, .ellipse:
+            return [
+                DrawingPoint(x: 0.35, y: 0.40),
+                DrawingPoint(x: 0.65, y: 0.60)
+            ]
+        case .line, .arrow:
+            return [
+                DrawingPoint(x: 0.30, y: 0.50),
+                DrawingPoint(x: 0.70, y: 0.50)
+            ]
+        default:
+            return []
+        }
+    }
+}
+
 enum AssembleTool: String, CaseIterable, Identifiable {
     case select
     case rectangle
@@ -984,6 +1110,27 @@ enum AssembleTool: String, CaseIterable, Identifiable {
         case .line: return "minus"
         case .arrow: return "arrow.right"
         case .text: return "textformat"
+        }
+    }
+
+    var hasOptions: Bool {
+        switch self {
+        case .select, .text: return false
+        case .rectangle, .ellipse, .line, .arrow: return true
+        }
+    }
+
+    var supportsFill: Bool {
+        switch self {
+        case .rectangle, .ellipse: return true
+        case .select, .line, .arrow, .text: return false
+        }
+    }
+
+    var canDisableStroke: Bool {
+        switch self {
+        case .rectangle, .ellipse: return true
+        case .select, .line, .arrow, .text: return false
         }
     }
 }

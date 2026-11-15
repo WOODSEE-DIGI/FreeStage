@@ -323,6 +323,23 @@ struct DrawingSource: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+/// Fill style for shape tools: no fill, solid color, or linear gradient.
+enum ShapeFillStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case none
+    case solid
+    case gradient
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none: return "No Fill"
+        case .solid: return "Solid"
+        case .gradient: return "Gradient"
+        }
+    }
+}
+
 /// A single continuous stroke, shape, or text element drawn by the user.
 struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
@@ -334,13 +351,25 @@ struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
     /// Text content when the tool is `.text`.
     var text: String?
 
+    /// Shape fill style (rectangle/ellipse).
+    var fillStyle: ShapeFillStyle
+    var fillColor: CGColorComponents
+    var gradientStartColor: CGColorComponents
+    var gradientEndColor: CGColorComponents
+    var gradientAngle: Double
+
     init(
         id: UUID = UUID(),
         points: [DrawingPoint] = [],
         color: CGColorComponents = .red,
         width: Double = 4,
         tool: DrawingTool = .pen,
-        text: String? = nil
+        text: String? = nil,
+        fillStyle: ShapeFillStyle = .none,
+        fillColor: CGColorComponents = CGColorComponents(r: 1, g: 0, b: 0, a: 1),
+        gradientStartColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1),
+        gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1),
+        gradientAngle: Double = 0
     ) {
         self.id = id
         self.points = points
@@ -348,6 +377,11 @@ struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
         self.width = width
         self.tool = tool
         self.text = text
+        self.fillStyle = fillStyle
+        self.fillColor = fillColor
+        self.gradientStartColor = gradientStartColor
+        self.gradientEndColor = gradientEndColor
+        self.gradientAngle = gradientAngle
     }
 }
 
