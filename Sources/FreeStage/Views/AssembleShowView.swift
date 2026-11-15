@@ -900,10 +900,11 @@ struct AssembleToolsSidebar: View {
     }
 
     private var fillOptions: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Fill")
                 .font(.caption.bold())
                 .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
 
             Picker("Fill Style", selection: $shapeOptions.fillStyle) {
                 ForEach(ShapeFillStyle.allCases) { style in
@@ -911,6 +912,7 @@ struct AssembleToolsSidebar: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
 
             switch shapeOptions.fillStyle {
             case .solid:
@@ -918,12 +920,14 @@ struct AssembleToolsSidebar: View {
             case .gradient:
                 colorRow("Start", color: $shapeOptions.gradientStartColor)
                 colorRow("End", color: $shapeOptions.gradientEndColor)
-                HStack {
+                HStack(spacing: 8) {
                     Text("Angle")
+                        .lineLimit(1)
                     Slider(value: $shapeOptions.gradientAngle, in: 0...360, step: 1)
                     Text("\(Int(shapeOptions.gradientAngle))°")
                         .monospacedDigit()
                         .frame(width: 36, alignment: .trailing)
+                        .lineLimit(1)
                 }
             case .none:
                 EmptyView()
@@ -932,10 +936,11 @@ struct AssembleToolsSidebar: View {
     }
 
     private var strokeOptions: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(selectedTool == .line || selectedTool == .arrow ? "Line" : "Border")
                 .font(.caption.bold())
                 .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
 
             Toggle("Enabled", isOn: $shapeOptions.strokeEnabled)
                 .foregroundStyle(theme.text)
@@ -944,21 +949,24 @@ struct AssembleToolsSidebar: View {
             if shapeOptions.strokeEnabled {
                 colorRow("Color", color: $shapeOptions.strokeColor)
 
-                HStack {
+                HStack(spacing: 8) {
                     Text("Width")
+                        .lineLimit(1)
                     Slider(value: $shapeOptions.strokeWidth, in: 1...32, step: 1)
                     Text("\(Int(shapeOptions.strokeWidth))")
                         .monospacedDigit()
                         .frame(width: 24, alignment: .trailing)
+                        .lineLimit(1)
                 }
             }
         }
     }
 
     private func colorRow(_ label: String, color: Binding<CGColorComponents>) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(label)
                 .foregroundStyle(theme.text)
+                .lineLimit(1)
             Spacer()
             ColorPicker("", selection: Binding(
                 get: {

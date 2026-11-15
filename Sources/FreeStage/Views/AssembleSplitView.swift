@@ -66,11 +66,11 @@ struct AssembleSplitView: NSViewRepresentable {
 
         private var isApplyingPositions = false
 
-        private let leftMin: CGFloat = 440
-        private let leftDefault: CGFloat = 540
-        private let rightMin: CGFloat = 260
-        private let rightDefault: CGFloat = 300
-        private let centreMin: CGFloat = 220
+        private let leftMin: CGFloat = 520
+        private let leftDefault: CGFloat = 620
+        private let rightMin: CGFloat = 340
+        private let rightDefault: CGFloat = 400
+        private let centreMin: CGFloat = 240
 
         // MARK: - Divider position constraints
 
