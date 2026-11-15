@@ -17,6 +17,7 @@ struct WorkspaceState: Hashable, Codable, Sendable {
     var selectedLayerID: UUID?
     var selectedSceneID: UUID?
     var selectedPlaceholderID: UUID?
+    var workspaceMode: WorkspaceMode
     var isEditMode: Bool
     var mastheadVisible: Bool
     var sidebarVisible: Bool
@@ -31,6 +32,7 @@ struct WorkspaceState: Hashable, Codable, Sendable {
         selectedLayerID: UUID? = nil,
         selectedSceneID: UUID? = nil,
         selectedPlaceholderID: UUID? = nil,
+        workspaceMode: WorkspaceMode = .edit,
         isEditMode: Bool = true,
         mastheadVisible: Bool = true,
         sidebarVisible: Bool = true,
@@ -44,6 +46,7 @@ struct WorkspaceState: Hashable, Codable, Sendable {
         self.selectedLayerID = selectedLayerID
         self.selectedSceneID = selectedSceneID
         self.selectedPlaceholderID = selectedPlaceholderID
+        self.workspaceMode = workspaceMode
         self.isEditMode = isEditMode
         self.mastheadVisible = mastheadVisible
         self.sidebarVisible = sidebarVisible

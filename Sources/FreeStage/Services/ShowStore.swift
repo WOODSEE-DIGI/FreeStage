@@ -33,6 +33,7 @@ final class ShowStore: NSObject {
 
     // MARK: - Workspace UI state
 
+    var workspaceMode: WorkspaceMode = .edit
     var isEditMode = true
     var mastheadVisible = true
     var sidebarVisible = true
@@ -49,6 +50,7 @@ final class ShowStore: NSObject {
         self.selectedLayerID = workspace.selectedLayerID
         self.selectedSceneID = workspace.selectedSceneID
         self.selectedPlaceholderID = workspace.selectedPlaceholderID
+        self.workspaceMode = workspace.workspaceMode
         self.isEditMode = workspace.isEditMode
         self.mastheadVisible = workspace.mastheadVisible
         self.sidebarVisible = workspace.sidebarVisible
@@ -188,6 +190,7 @@ final class ShowStore: NSObject {
         selectedLayerID = workspace.selectedLayerID
         selectedSceneID = workspace.selectedSceneID
         selectedPlaceholderID = workspace.selectedPlaceholderID
+        workspaceMode = workspace.workspaceMode
         isEditMode = workspace.isEditMode
         mastheadVisible = workspace.mastheadVisible
         sidebarVisible = workspace.sidebarVisible
@@ -236,6 +239,7 @@ final class ShowStore: NSObject {
             selectedLayerID: selectedLayerID,
             selectedSceneID: selectedSceneID,
             selectedPlaceholderID: selectedPlaceholderID,
+            workspaceMode: workspaceMode,
             isEditMode: isEditMode,
             mastheadVisible: mastheadVisible,
             sidebarVisible: sidebarVisible,

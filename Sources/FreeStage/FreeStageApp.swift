@@ -100,10 +100,8 @@ struct FreeStageApp: App {
             Group {
                 if showProjectManager {
                     ProjectManagerView(isPresented: $showProjectManager)
-                } else if store.show.kind == .presenter {
-                    PresenterWorkspaceView()
                 } else {
-                    ContentView()
+                    WorkspaceModeContainer()
                 }
             }
             .environment(store)
