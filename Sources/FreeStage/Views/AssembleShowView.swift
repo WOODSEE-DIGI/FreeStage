@@ -213,7 +213,12 @@ struct AssembleShowView: View {
                     scene: activeSceneForCanvas,
                     title: "Canvas",
                     isLive: false,
-                    isEditable: true
+                    isEditable: false
+                )
+
+                AssembleCanvasOverlay(
+                    selectedLayerID: $selectedLayerID,
+                    layers: activeLayersBinding
                 )
             } else {
                 VStack(spacing: 8) {
@@ -597,6 +602,157 @@ private struct ToolButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Canvas overlay
+
+/// On-canvas selection, move, and resize for the Assemble workspace.
+/// Operates on the local layer binding so it works for both theatre scenes
+/// and presenter segments without relying on store.selectedLayer semantics.
+private struct AssembleCanvasOverlay: View {
+    @Binding var selectedLayerID: UUID?
+    @Binding var layers: [Layer]
+    @State private var lastMoveTranslation: CGSize = .zero
+    @State private var lastResizeTranslation: CGSize = .zero
+
+    private var selectedLayer: Layer? {
+        guard let selectedLayerID else { return nil }
+        return layers.first { $0.id == selectedLayerID }
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Transparent hit areas so clicking any layer on the canvas
+                // selects it. Rendered first so the selected-layer controls
+                // sit on top and take precedence for drag/resize.
+                ForEach(layers) { layer in
+                    let size = geometry.size
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .frame(
+                            width: max(0, layer.transform.scaleX * size.width),
+                            height: max(0, layer.transform.scaleY * size.height)
+                        )
+                        .position(
+                            x: layer.transform.x * size.width,
+                            y: layer.transform.y * size.height
+                        )
+                        .onTapGesture {
+                            selectedLayerID = layer.id
+                        }
+                }
+
+                if let layer = selectedLayer {
+                    let frame = frame(for: layer, in: geometry.size)
+                    boundingBox(frame: frame, layer: layer, size: geometry.size)
+                    resizeHandle(frame: frame, layer: layer, size: geometry.size)
+                }
+            }
+        }
+    }
+
+    private func frame(for layer: Layer, in size: CGSize) -> CGRect {
+        let width = size.width
+        let height = size.height
+        let origin = CGPoint(
+            x: (layer.transform.x - layer.transform.scaleX / 2) * width,
+            y: (layer.transform.y - layer.transform.scaleY / 2) * height
+        )
+        return CGRect(
+            x: origin.x,
+            y: origin.y,
+            width: layer.transform.scaleX * width,
+            height: layer.transform.scaleY * height
+        )
+    }
+
+    private func boundingBox(frame: CGRect, layer: Layer, size: CGSize) -> some View {
+        Rectangle()
+            .strokeBorder(Color.yellow, lineWidth: 2)
+            .frame(width: max(0, frame.width), height: max(0, frame.height))
+            .position(x: frame.midX, y: frame.midY)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(coordinateSpace: .local)
+                    .onChanged { value in
+                        let delta = CGSize(
+                            width: value.translation.width - lastMoveTranslation.width,
+                            height: value.translation.height - lastMoveTranslation.height
+                        )
+                        move(layer: layer, by: delta, in: size)
+                        lastMoveTranslation = value.translation
+                    }
+                    .onEnded { _ in
+                        lastMoveTranslation = .zero
+                    }
+            )
+            .onTapGesture(count: 2) {
+                update(layer: layer, transform: .identity)
+            }
+    }
+
+    private func move(layer: Layer, by translation: CGSize, in size: CGSize) {
+        let dx = Double(translation.width / size.width)
+        let dy = Double(translation.height / size.height)
+        var transform = layer.transform
+        transform.x = (layer.transform.x + dx).clamped(to: 0...1)
+        transform.y = (layer.transform.y + dy).clamped(to: 0...1)
+        update(layer: layer, transform: transform)
+    }
+
+    private func resizeHandle(frame: CGRect, layer: Layer, size: CGSize) -> some View {
+        Circle()
+            .fill(Color.yellow)
+            .frame(width: 14, height: 14)
+            .position(x: frame.maxX, y: frame.maxY)
+            .gesture(
+                DragGesture(coordinateSpace: .local)
+                    .onChanged { value in
+                        let delta = CGSize(
+                            width: value.translation.width - lastResizeTranslation.width,
+                            height: value.translation.height - lastResizeTranslation.height
+                        )
+                        resize(layer: layer, from: frame, by: delta, in: size)
+                        lastResizeTranslation = value.translation
+                    }
+                    .onEnded { _ in
+                        lastResizeTranslation = .zero
+                    }
+            )
+    }
+
+    private func resize(layer: Layer, from frame: CGRect, by translation: CGSize, in size: CGSize) {
+        let newMaxX = frame.maxX + translation.width
+        let newMaxY = frame.maxY + translation.height
+        let newWidth = max(20, newMaxX - frame.minX)
+        let newHeight = max(20, newMaxY - frame.minY)
+
+        let scaleX = Double(newWidth / size.width)
+        let scaleY = Double(newHeight / size.height)
+
+        let newCenterX = frame.minX / size.width + scaleX / 2
+        let newCenterY = frame.minY / size.height + scaleY / 2
+
+        var transform = layer.transform
+        transform.scaleX = scaleX.clamped(to: 0.01...2.0)
+        transform.scaleY = scaleY.clamped(to: 0.01...2.0)
+        transform.x = newCenterX.clamped(to: 0...1)
+        transform.y = newCenterY.clamped(to: 0...1)
+        update(layer: layer, transform: transform)
+    }
+
+    private func update(layer: Layer, transform: ItemTransform) {
+        guard let index = layers.firstIndex(where: { $0.id == layer.id }) else { return }
+        layers[index].transform = transform
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 

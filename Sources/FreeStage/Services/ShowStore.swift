@@ -431,6 +431,16 @@ final class ShowStore: NSObject {
         updateSelectedLayer { $0.transform = transform }
     }
 
+    /// Update any layer in the active scene or presenter segment by ID.
+    func updateLayer(id: UUID, transform: ItemTransform) {
+        if show.kind == .presenter,
+           let segmentID = activeSegmentID {
+            updatePresenterSegmentLayer(segmentID: segmentID, id: id) { $0.transform = transform }
+            return
+        }
+        _ = mutateLayer(id: id) { $0.transform = transform }
+    }
+
     func updateSelectedLayer(_ mutation: (inout Layer) -> Void) {
         guard let selectedLayerID else { return }
         let mutated = mutateLayer(id: selectedLayerID, mutation: mutation)
