@@ -340,11 +340,47 @@ struct AssembleShowView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
+            if let segment = store.activeSegment, segment.type == .cameraGraphic {
+                cameraLayerRow(segment: segment)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+
             LayerStackView(
                 layers: activeLayersBinding,
                 selectedLayerID: $selectedLayerID
             )
         }
+    }
+
+    private func cameraLayerRow(segment: PresenterSegment) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "video.fill")
+                .foregroundStyle(theme.accent)
+                .frame(width: 16)
+
+            Text(segment.cameraAngle.displayName)
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Picker("Camera placement", selection: Binding(
+                get: { segment.cameraLayerPlacement },
+                set: { newPlacement in
+                    store.updatePresenterSegment(id: segment.id) { $0.cameraLayerPlacement = newPlacement }
+                }
+            )) {
+                Text("BG").tag(Layer.Placement.background)
+                Text("FG").tag(Layer.Placement.foreground)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 90)
+            .help("Background puts cue layers on top of the camera. Foreground puts the camera on top.")
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(theme.selected.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var globalLayersColumn: some View {
