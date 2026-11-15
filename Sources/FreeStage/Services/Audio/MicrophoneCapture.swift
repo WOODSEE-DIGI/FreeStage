@@ -105,22 +105,6 @@ private final class CaptureDelegate: NSObject, AVCaptureAudioDataOutputSampleBuf
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard let bufferList = CMSampleBufferGetDataBuffer(sampleBuffer),
-              CMBlockBufferGetDataLength(bufferList) > 0 else { return }
-
-        var abl = AudioBufferList()
-        var blockBuffer: CMBlockBuffer?
-        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: nil,
-            bufferListOut: &abl,
-            bufferListSize: MemoryLayout<AudioBufferList>.size,
-            blockBufferAllocator: kCFAllocatorDefault,
-            blockBufferMemoryAllocator: kCFAllocatorDefault,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer
-        )
-
         guard let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)
         else { return }
@@ -133,9 +117,52 @@ private final class CaptureDelegate: NSObject, AVCaptureAudioDataOutputSampleBuf
 
         guard channels > 0, frameLength > 0 else { return }
 
+        // Query the required AudioBufferList size; a non-interleaved format
+        // needs one buffer per channel, which does not fit in a single
+        // AudioBufferList value. Passing an undersized buffer caused the
+        // general-path loop to read past the allocated memory.
+        var bufferListSize = 0
+        var status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &bufferListSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: nil
+        )
+        guard status == noErr, bufferListSize > 0 else {
+            micLogger.error("Failed to get audio buffer list size: \(status)")
+            return
+        }
+
+        let bufferListMemory = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferListSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { bufferListMemory.deallocate() }
+        let bufferListOut = bufferListMemory.assumingMemoryBound(to: AudioBufferList.self)
+
+        var blockBuffer: CMBlockBuffer?
+        status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: bufferListOut,
+            bufferListSize: bufferListSize,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr else {
+            micLogger.error("Failed to get audio buffer list: \(status)")
+            return
+        }
+
         if interleaved, isFloat, bytesPerSample == MemoryLayout<Float>.size, channels == 2 {
             // Fast path: already interleaved stereo Float32.
-            let audioBuffer = abl.mBuffers
+            let audioBuffer = bufferListOut.pointee.mBuffers
             guard let data = audioBuffer.mData else { return }
             let samples = data.assumingMemoryBound(to: Float.self)
             let count = frameLength * channels
@@ -144,14 +171,17 @@ private final class CaptureDelegate: NSObject, AVCaptureAudioDataOutputSampleBuf
         }
 
         // General path: convert to interleaved stereo Float32.
-        let sourceABL = UnsafeMutableAudioBufferListPointer(&abl)
+        let sourceABL = UnsafeMutableAudioBufferListPointer(bufferListOut)
+        let availableBuffers = sourceABL.count
+        guard availableBuffers > 0 else { return }
+
         var outputSamples = [Float](repeating: 0, count: frameLength * 2)
 
         for frame in 0..<frameLength {
             var left: Float = 0
             var right: Float = 0
 
-            for channel in 0..<min(channels, 2) {
+            for channel in 0..<min(channels, 2, availableBuffers) {
                 let buffer = sourceABL[channel]
                 guard let data = buffer.mData else { continue }
                 let sample: Float
