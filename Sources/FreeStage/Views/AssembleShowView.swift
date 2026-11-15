@@ -295,12 +295,45 @@ struct AssembleShowView: View {
             }
             .padding(12)
 
+            if store.show.kind == .presenter {
+                HStack(spacing: 0) {
+                    localLayersColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    Divider()
+
+                    globalLayersColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                LayerStackView(
+                    layers: activeLayersBinding,
+                    selectedLayerID: $selectedLayerID
+                )
+            }
+        }
+        .background(theme.panelBackground)
+    }
+
+    private var localLayersColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Cue Layers")
+                .font(.subheadline.bold())
+                .foregroundStyle(theme.text)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
             LayerStackView(
                 layers: activeLayersBinding,
                 selectedLayerID: $selectedLayerID
             )
         }
-        .background(theme.panelBackground)
+    }
+
+    private var globalLayersColumn: some View {
+        GlobalLayersPanel()
+            .padding(.top, 8)
     }
 
     // MARK: - Right column
@@ -343,7 +376,7 @@ struct AssembleShowView: View {
             }
             .padding(.horizontal, 12)
         case .setup:
-            ShowSetupPanel()
+            ShowSetupPanel(showGlobalLayers: false)
         }
     }
 

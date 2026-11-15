@@ -18,9 +18,7 @@ struct ShowSetupPanel: View {
     @State private var cameras: [CameraDevice] = []
     @State private var cameraAccessStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
     @State private var isPickingGlobalBackground = false
-    @State private var isPickingGlobalLayerImage = false
-    @State private var isPickingGlobalLayerVideo = false
-    @State private var selectedGlobalLayerID: UUID?
+    var showGlobalLayers: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,13 +43,15 @@ struct ShowSetupPanel: View {
             placeholdersSection
                 .padding(.horizontal)
 
-            Divider()
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+            if showGlobalLayers {
+                Divider()
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
 
-            globalLayersSection
-                .padding(.horizontal)
-                .padding(.bottom, 12)
+                GlobalLayersPanel()
+                    .padding(.horizontal)
+                    .padding(.bottom, 12)
+            }
 
             Spacer()
         }
@@ -77,26 +77,6 @@ struct ShowSetupPanel: View {
             rundown.backgroundSource = source
             rundown.backgroundTransform = .identity
             store.show.presenterRundown = rundown
-        }
-        .fileImporter(
-            isPresented: $isPickingGlobalLayerImage,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case .success(let urls) = result,
-                  let url = urls.first else { return }
-            let id = store.addPresenterGlobalLayer(source: .image(url: url))
-            selectedGlobalLayerID = id
-        }
-        .fileImporter(
-            isPresented: $isPickingGlobalLayerVideo,
-            allowedContentTypes: [.movie],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case .success(let urls) = result,
-                  let url = urls.first else { return }
-            let id = store.addPresenterGlobalLayer(source: .media(url: url))
-            selectedGlobalLayerID = id
         }
     }
 
@@ -284,9 +264,37 @@ struct ShowSetupPanel: View {
         }
     }
 
-    // MARK: - Global layers
+    // MARK: - Helpers
 
-    private var globalLayersSection: some View {
+    private func refreshCameras() {
+        cameras = CameraDevice.discover()
+    }
+
+    private func checkCameraAccess() {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        cameraAccessStatus = status
+        if status == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    self.cameraAccessStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Global layers panel
+
+/// Standalone global-layers editor. Used inside ShowSetupPanel and directly in
+/// the Assemble workspace's Layers section.
+struct GlobalLayersPanel: View {
+    @Environment(ShowStore.self) private var store
+    @Environment(ThemeStore.self) private var theme
+    @State private var isPickingGlobalLayerImage = false
+    @State private var isPickingGlobalLayerVideo = false
+    @State private var selectedGlobalLayerID: UUID?
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Global Layers")
@@ -349,23 +357,25 @@ struct ShowSetupPanel: View {
                     .foregroundStyle(theme.secondaryText)
             }
         }
-    }
-
-    // MARK: - Helpers
-
-    private func refreshCameras() {
-        cameras = CameraDevice.discover()
-    }
-
-    private func checkCameraAccess() {
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
-        cameraAccessStatus = status
-        if status == .notDetermined {
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                Task { @MainActor in
-                    self.cameraAccessStatus = AVCaptureDevice.authorizationStatus(for: .video)
-                }
-            }
+        .fileImporter(
+            isPresented: $isPickingGlobalLayerImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            let id = store.addPresenterGlobalLayer(source: .image(url: url))
+            selectedGlobalLayerID = id
+        }
+        .fileImporter(
+            isPresented: $isPickingGlobalLayerVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            let id = store.addPresenterGlobalLayer(source: .media(url: url))
+            selectedGlobalLayerID = id
         }
     }
 }
