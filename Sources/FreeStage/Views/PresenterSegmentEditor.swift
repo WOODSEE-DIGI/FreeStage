@@ -61,6 +61,7 @@ struct PresenterSegmentEditor: View {
                 .textFieldStyle(.roundedBorder)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 6)
         .fileImporter(
             isPresented: $isPickingChromaBackground,
             allowedContentTypes: [.image, .movie],

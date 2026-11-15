@@ -149,12 +149,13 @@ struct AssembleShowView: View {
             Text("CueCard Editor")
                 .font(.headline)
                 .foregroundStyle(theme.text)
-                .padding(12)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
 
             ScrollView {
                 cueEditorContent
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
