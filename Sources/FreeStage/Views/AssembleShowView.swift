@@ -12,10 +12,17 @@ import SwiftUI
 struct AssembleShowView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(AppSettings.self) private var appSettings
     @Environment(\.cameraCaptureManager) private var cameraCaptureManager
     @Environment(\.screenCaptureManager) private var screenCaptureManager
     @State private var selectedLayerID: UUID?
     @State private var rightPanelTab: RightPanelTab = .tools
+    @State private var isAddingCamera = false
+    @State private var isAddingScreen = false
+    @State private var isAddingImage = false
+    @State private var isAddingVideo = false
+    @State private var isAddingNDI = false
+    @State private var isAddingSyphon = false
 
     // MARK: - Panel widths
 
@@ -55,6 +62,52 @@ struct AssembleShowView: View {
         .task {
             updateCameraCapture()
             updateScreenCapture()
+        }
+        .sheet(isPresented: $isAddingCamera) {
+            CameraPickerSheet { device in
+                addCameraLayer(device: device)
+            }
+            .frame(minWidth: 360, minHeight: 320)
+        }
+        .sheet(isPresented: $isAddingScreen) {
+            ScreenPickerSheet { display in
+                addScreenLayer(display: display)
+            }
+            .frame(minWidth: 400, minHeight: 360)
+        }
+        .sheet(isPresented: $isAddingNDI) {
+            NDIPickerSheet { source in
+                if let id = store.addLayerToActiveCue(source: source, name: source.defaultName) {
+                    selectedLayerID = id
+                }
+            }
+            .frame(minWidth: 400, minHeight: 360)
+        }
+        .sheet(isPresented: $isAddingSyphon) {
+            SyphonPickerSheet { source in
+                if let id = store.addLayerToActiveCue(source: source, name: source.defaultName) {
+                    selectedLayerID = id
+                }
+            }
+            .frame(minWidth: 400, minHeight: 360)
+        }
+        .fileImporter(
+            isPresented: $isAddingImage,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            addMediaLayer(url: url, isImage: true)
+        }
+        .fileImporter(
+            isPresented: $isAddingVideo,
+            allowedContentTypes: [.movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result,
+                  let url = urls.first else { return }
+            addMediaLayer(url: url, isImage: false)
         }
     }
 
@@ -286,12 +339,7 @@ struct AssembleShowView: View {
                     .font(.headline)
                     .foregroundStyle(theme.text)
                 Spacer()
-                Button {
-                    // TODO: Add layer menu
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
+                addLayerMenu
             }
             .padding(12)
 
@@ -334,6 +382,25 @@ struct AssembleShowView: View {
     private var globalLayersColumn: some View {
         GlobalLayersPanel()
             .padding(.top, 8)
+    }
+
+    private var addLayerMenu: some View {
+        Menu {
+            Button("Camera…") { isAddingCamera = true }
+            Button("Screen…") { isAddingScreen = true }
+            Divider()
+            Button("Image…") { isAddingImage = true }
+            Button("Video…") { isAddingVideo = true }
+            Divider()
+            Button("Color") { addColorLayer() }
+            Button("Text") { addTextLayer() }
+            Divider()
+            Button("NDI…") { isAddingNDI = true }
+            Button("Syphon…") { isAddingSyphon = true }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .menuStyle(.borderlessButton)
     }
 
     // MARK: - Right column
@@ -483,6 +550,51 @@ struct AssembleShowView: View {
             store.addCue(for: sceneID)
         }
     }
+
+    // MARK: - Layer creation helpers
+
+    private func addColorLayer() {
+        let style = appSettings.defaultShowStyle
+        let source = Source.color(style.primaryColor)
+        if let id = store.addLayerToActiveCue(source: source, name: "Color") {
+            selectedLayerID = id
+        }
+    }
+
+    private func addTextLayer() {
+        let textSource = TextSource(content: "New Text")
+        let source = Source.text(textSource)
+        if let id = store.addLayerToActiveCue(source: source, name: "Text") {
+            selectedLayerID = id
+        }
+    }
+
+    private func addMediaLayer(url: URL, isImage: Bool) {
+        let source: Source = isImage ? .image(url: url) : .media(url: url)
+        let name = url.deletingPathExtension().lastPathComponent
+        if let id = store.addLayerToActiveCue(source: source, name: name) {
+            selectedLayerID = id
+        }
+    }
+
+    private func addCameraLayer(device: CameraDevice) {
+        let source = Source.camera(deviceID: device.uniqueID)
+        if let id = store.addLayerToActiveCue(source: source, name: device.name) {
+            selectedLayerID = id
+        }
+        cameraCaptureManager?.startCapture(uniqueID: device.uniqueID)
+    }
+
+    private func addScreenLayer(display: ScreenCaptureDisplay) {
+        let source = Source.screen(displayID: display.displayID)
+        if let id = store.addLayerToActiveCue(source: source, name: "Screen \(display.displayID)") {
+            selectedLayerID = id
+        }
+        if !ScreenRecordingPermission.isGranted {
+            _ = ScreenRecordingPermission.request()
+        }
+        screenCaptureManager?.startCapture(displayID: display.displayID)
+    }
 }
 
 // MARK: - Cue list item
@@ -574,36 +686,78 @@ struct LayerStackView: View {
     @Binding var layers: [Layer]
     @Binding var selectedLayerID: UUID?
     @Environment(ThemeStore.self) private var theme
+    @State private var editingLayerID: UUID?
+    @State private var editingName: String = ""
 
     var body: some View {
         List {
             ForEach(layers) { layer in
-                HStack(spacing: 10) {
-                    Button {
-                        toggleVisibility(layer: layer)
-                    } label: {
-                        Image(systemName: layer.isVisible ? "eye" : "eye.slash")
-                            .foregroundStyle(theme.secondaryText)
+                layerRow(layer: layer)
+                    .padding(.vertical, 4)
+                    .background(isSelected(layer: layer) ? theme.selected.opacity(0.2) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if editingLayerID != layer.id {
+                            selectedLayerID = layer.id
+                        }
                     }
-                    .buttonStyle(.borderless)
-
-                    Text(layer.name)
-                        .foregroundStyle(theme.text)
-
-                    Spacer()
-
-                    Slider(value: opacityBinding(for: layer), in: 0...1)
-                        .frame(width: 80)
-                }
-                .padding(.vertical, 4)
-                .background(isSelected(layer: layer) ? theme.selected.opacity(0.2) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedLayerID = layer.id
-                }
+                    .contextMenu {
+                        Button("Rename") {
+                            startRenaming(layer: layer)
+                        }
+                        Button("Duplicate") {
+                            duplicate(layer: layer)
+                        }
+                        Button(layer.isLocked ? "Unlock" : "Lock") {
+                            toggleLock(layer: layer)
+                        }
+                        Divider()
+                        Button("Delete", role: .destructive) {
+                            delete(layer: layer)
+                        }
+                    }
             }
             .onMove(perform: move)
+            .onDelete(perform: deleteAtOffsets)
+        }
+    }
+
+    private func layerRow(layer: Layer) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                toggleVisibility(layer: layer)
+            } label: {
+                Image(systemName: layer.isVisible ? "eye" : "eye.slash")
+                    .foregroundStyle(theme.secondaryText)
+            }
+            .buttonStyle(.borderless)
+            .disabled(layer.isLocked)
+
+            if editingLayerID == layer.id {
+                TextField("Name", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit {
+                        finishRenaming()
+                    }
+            } else {
+                Text(layer.name)
+                    .foregroundStyle(layer.isLocked ? theme.secondaryText : theme.text)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if layer.isLocked {
+                Image(systemName: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+            }
+
+            Slider(value: opacityBinding(for: layer), in: 0...1)
+                .frame(width: 80)
+                .disabled(layer.isLocked)
         }
     }
 
@@ -623,13 +777,71 @@ struct LayerStackView: View {
     }
 
     private func toggleVisibility(layer: Layer) {
+        guard !layer.isLocked else { return }
         if let index = layers.firstIndex(where: { $0.id == layer.id }) {
             layers[index].isVisible.toggle()
         }
     }
 
+    private func toggleLock(layer: Layer) {
+        if let index = layers.firstIndex(where: { $0.id == layer.id }) {
+            layers[index].isLocked.toggle()
+        }
+    }
+
     private func move(from source: IndexSet, to destination: Int) {
         layers.move(fromOffsets: source, toOffset: destination)
+    }
+
+    private func deleteAtOffsets(_ offsets: IndexSet) {
+        let idsToDelete = offsets.compactMap { layers[$0].id }
+        layers.remove(atOffsets: offsets)
+        if selectedLayerID.map(idsToDelete.contains) == true {
+            selectedLayerID = nil
+        }
+    }
+
+    private func delete(layer: Layer) {
+        if let index = layers.firstIndex(where: { $0.id == layer.id }) {
+            layers.remove(at: index)
+        }
+        if selectedLayerID == layer.id {
+            selectedLayerID = nil
+        }
+    }
+
+    private func duplicate(layer: Layer) {
+        let copy = Layer(
+            name: layer.name + " Copy",
+            source: layer.source,
+            transform: layer.transform,
+            filters: layer.filters,
+            blendMode: layer.blendMode,
+            opacity: layer.opacity,
+            isVisible: layer.isVisible,
+            isLocked: false,
+            cameraSettings: layer.cameraSettings,
+            placement: layer.placement
+        )
+        if let index = layers.firstIndex(where: { $0.id == layer.id }) {
+            layers.insert(copy, at: index + 1)
+        } else {
+            layers.append(copy)
+        }
+        selectedLayerID = copy.id
+    }
+
+    private func startRenaming(layer: Layer) {
+        editingLayerID = layer.id
+        editingName = layer.name
+    }
+
+    private func finishRenaming() {
+        guard let editingLayerID else { return }
+        if let index = layers.firstIndex(where: { $0.id == editingLayerID }) {
+            layers[index].name = editingName.isEmpty ? layers[index].name : editingName
+        }
+        self.editingLayerID = nil
     }
 }
 
