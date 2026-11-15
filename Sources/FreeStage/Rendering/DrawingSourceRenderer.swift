@@ -49,10 +49,18 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         cacheLock.unlock()
 
         return autoreleasepool { () -> MTLTexture? in
-            let size = drawing.canvasSize
-            let width = Int(size.width)
-            let height = Int(size.height)
-            guard width > 0, height > 0 else { return nil }
+            let logicalSize = drawing.canvasSize
+            guard logicalSize.width > 0, logicalSize.height > 0 else { return nil }
+
+            // Render at 2× logical resolution so shapes stay sharp on Retina
+            // displays and when scaled by layer transforms.
+            let renderScale: CGFloat = 2
+            let textureSize = CGSize(
+                width: logicalSize.width * renderScale,
+                height: logicalSize.height * renderScale
+            )
+            let width = Int(textureSize.width)
+            let height = Int(textureSize.height)
 
             let descriptor = MTLTextureDescriptor()
             descriptor.width = width
@@ -74,7 +82,11 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
                 return nil
             }
 
-            guard let cgImage = renderCGImage(drawing: drawing, size: CGSize(width: width, height: height)) else {
+            guard let cgImage = renderCGImage(
+                drawing: drawing,
+                logicalSize: logicalSize,
+                renderScale: renderScale
+            ) else {
                 ciContextLock.unlock()
                 return nil
             }
@@ -95,9 +107,17 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         }
     }
 
-    private func renderCGImage(drawing: DrawingSource, size: CGSize) -> CGImage? {
-        let width = Int(size.width)
-        let height = Int(size.height)
+    private func renderCGImage(
+        drawing: DrawingSource,
+        logicalSize: CGSize,
+        renderScale: CGFloat
+    ) -> CGImage? {
+        let textureSize = CGSize(
+            width: logicalSize.width * renderScale,
+            height: logicalSize.height * renderScale
+        )
+        let width = Int(textureSize.width)
+        let height = Int(textureSize.height)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(
@@ -110,13 +130,20 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
             bitmapInfo: bitmapInfo
         ) else { return nil }
 
+        // Scale so that logical coordinates fill the high-resolution texture.
+        context.scaleBy(x: renderScale, y: renderScale)
+
         // Clear/background.
         let bg = drawing.backgroundColor
         context.setFillColor(CGColor(red: bg.r, green: bg.g, blue: bg.b, alpha: bg.a))
-        context.fill(CGRect(origin: .zero, size: size))
+        context.fill(CGRect(origin: .zero, size: logicalSize))
+
+        // Enable smooth antialiasing for shape edges.
+        context.setShouldAntialias(true)
+        context.setAllowsAntialiasing(true)
 
         for stroke in drawing.strokes {
-            drawStroke(stroke, in: context, size: size)
+            drawStroke(stroke, in: context, size: logicalSize)
         }
 
         return context.makeImage()
