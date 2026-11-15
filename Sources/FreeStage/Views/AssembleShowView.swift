@@ -699,7 +699,10 @@ struct LayerStackView: View {
 
     var body: some View {
         List {
-            ForEach(layers) { layer in
+            // Display layers front-to-back: the topmost rendered layer appears
+            // at the top of the list. The underlying model still stores layers
+            // back-to-front, so we map moves/deletes through the reversed view.
+            ForEach(Array(layers.reversed())) { layer in
                 layerRow(layer: layer)
                     .padding(.vertical, 4)
                     .background(isSelected(layer: layer) ? theme.selected.opacity(0.2) : Color.clear)
@@ -798,12 +801,16 @@ struct LayerStackView: View {
     }
 
     private func move(from source: IndexSet, to destination: Int) {
-        layers.move(fromOffsets: source, toOffset: destination)
+        var display = Array(layers.reversed())
+        display.move(fromOffsets: source, toOffset: destination)
+        layers = display.reversed()
     }
 
     private func deleteAtOffsets(_ offsets: IndexSet) {
-        let idsToDelete = offsets.compactMap { layers[$0].id }
-        layers.remove(atOffsets: offsets)
+        var display = Array(layers.reversed())
+        let idsToDelete = offsets.compactMap { display[$0].id }
+        display.remove(atOffsets: offsets)
+        layers = display.reversed()
         if selectedLayerID.map(idsToDelete.contains) == true {
             selectedLayerID = nil
         }
@@ -867,11 +874,16 @@ struct AssembleToolsSidebar: View {
     @State private var lockedAspectRatio: Double = 1.0
     var onLayerAdded: ((UUID) -> Void)?
 
+    /// Index of any selected cue layer, regardless of source type.
+    private var selectedLayerIndex: Int? {
+        guard let selectedLayerID else { return nil }
+        return layers.firstIndex(where: { $0.id == selectedLayerID })
+    }
+
     /// True when the selected layer is a single-stroke drawing shape that can
     /// be edited with the same controls used for tool options.
     private var selectedShapeIndex: Int? {
-        guard let selectedLayerID,
-              let layerIndex = layers.firstIndex(where: { $0.id == selectedLayerID }),
+        guard let layerIndex = selectedLayerIndex,
               case .drawing(let drawing) = layers[layerIndex].source,
               drawing.strokes.first != nil else { return nil }
         return layerIndex
@@ -886,7 +898,7 @@ struct AssembleToolsSidebar: View {
     }
 
     private var panelTitle: String {
-        if let layerIndex = selectedShapeIndex {
+        if let layerIndex = selectedLayerIndex {
             if let tool = selectedShapeTool {
                 return "\(tool.displayName) Properties"
             }
@@ -911,7 +923,7 @@ struct AssembleToolsSidebar: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
 
-            if effectiveTool.hasOptions || selectedShapeIndex != nil {
+            if selectedLayerIndex != nil || selectedTool.hasOptions {
                 Divider()
                     .padding(.vertical, 12)
 
@@ -930,7 +942,9 @@ struct AssembleToolsSidebar: View {
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
 
-            transformOptions
+            if selectedLayerIndex != nil {
+                transformOptions
+            }
 
             if selectedShapeTool?.supportsFill == true {
                 fillOptions
@@ -1009,38 +1023,40 @@ struct AssembleToolsSidebar: View {
                     .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
-                Button {
-                    toggleAspectRatioLock()
-                } label: {
-                    Image(systemName: isAspectRatioLocked ? "lock.fill" : "lock.open")
-                        .foregroundStyle(isAspectRatioLocked ? theme.accent : theme.secondaryText)
-                }
-                .buttonStyle(.borderless)
-                .help(isAspectRatioLocked ? "Unlock aspect ratio" : "Lock aspect ratio")
+            if selectedShapeTool != nil {
+                HStack(spacing: 8) {
+                    Button {
+                        toggleAspectRatioLock()
+                    } label: {
+                        Image(systemName: isAspectRatioLocked ? "lock.fill" : "lock.open")
+                            .foregroundStyle(isAspectRatioLocked ? theme.accent : theme.secondaryText)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isAspectRatioLocked ? "Unlock aspect ratio" : "Lock aspect ratio")
 
-                Text(isAspectRatioLocked ? "Locked" : "Unlocked")
-                    .font(.caption)
-                    .foregroundStyle(theme.secondaryText)
-                    .lineLimit(1)
+                    Text(isAspectRatioLocked ? "Locked" : "Unlocked")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryText)
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
 
-                HStack(spacing: 4) {
-                    ForEach(AspectRatioPreset.allCases) { preset in
-                        Button {
-                            applyAspectRatioPreset(preset)
-                        } label: {
-                            Text(preset.displayName)
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .foregroundStyle(theme.text)
-                                .background(theme.secondaryText.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                    HStack(spacing: 4) {
+                        ForEach(AspectRatioPreset.allCases) { preset in
+                            Button {
+                                applyAspectRatioPreset(preset)
+                            } label: {
+                                Text(preset.displayName)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .foregroundStyle(theme.text)
+                                    .background(theme.secondaryText.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .buttonStyle(.borderless)
                     }
                 }
             }
@@ -1295,14 +1311,14 @@ struct AssembleToolsSidebar: View {
     private var scaleXBinding: Binding<Double> {
         Binding(
             get: {
-                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                guard let layerIndex = selectedLayerIndex else { return 1.0 }
                 return layers[layerIndex].transform.scaleX
             },
             set: { newValue in
-                guard let layerIndex = selectedShapeIndex else { return }
+                guard let layerIndex = selectedLayerIndex else { return }
                 var transform = layers[layerIndex].transform
                 transform.scaleX = newValue
-                if isAspectRatioLocked, transform.scaleY > 0 {
+                if isAspectRatioLocked, selectedShapeTool != nil, transform.scaleY > 0 {
                     transform.scaleY = newValue / lockedAspectRatio
                 }
                 layers[layerIndex].transform = transform
@@ -1313,14 +1329,14 @@ struct AssembleToolsSidebar: View {
     private var scaleYBinding: Binding<Double> {
         Binding(
             get: {
-                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                guard let layerIndex = selectedLayerIndex else { return 1.0 }
                 return layers[layerIndex].transform.scaleY
             },
             set: { newValue in
-                guard let layerIndex = selectedShapeIndex else { return }
+                guard let layerIndex = selectedLayerIndex else { return }
                 var transform = layers[layerIndex].transform
                 transform.scaleY = newValue
-                if isAspectRatioLocked, transform.scaleY > 0 {
+                if isAspectRatioLocked, selectedShapeTool != nil, transform.scaleY > 0 {
                     transform.scaleX = newValue * lockedAspectRatio
                 }
                 layers[layerIndex].transform = transform
@@ -1338,12 +1354,12 @@ struct AssembleToolsSidebar: View {
     private var uniformScaleBinding: Binding<Double> {
         Binding(
             get: {
-                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                guard let layerIndex = selectedLayerIndex else { return 1.0 }
                 let transform = layers[layerIndex].transform
                 return (transform.scaleX + transform.scaleY) / 2
             },
             set: { newValue in
-                guard let layerIndex = selectedShapeIndex else { return }
+                guard let layerIndex = selectedLayerIndex else { return }
                 var transform = layers[layerIndex].transform
                 let currentScale = (transform.scaleX + transform.scaleY) / 2
                 guard currentScale > 0 else { return }
@@ -1361,11 +1377,11 @@ struct AssembleToolsSidebar: View {
     ) -> Binding<Value> {
         Binding(
             get: {
-                guard let layerIndex = selectedShapeIndex else { return get(.identity) }
+                guard let layerIndex = selectedLayerIndex else { return get(.identity) }
                 return get(layers[layerIndex].transform)
             },
             set: { newValue in
-                guard let layerIndex = selectedShapeIndex else { return }
+                guard let layerIndex = selectedLayerIndex else { return }
                 var transform = layers[layerIndex].transform
                 set(&transform, newValue)
                 layers[layerIndex].transform = transform
