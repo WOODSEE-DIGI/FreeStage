@@ -863,6 +863,8 @@ struct AssembleToolsSidebar: View {
     @Binding var layers: [Layer]
     @State private var selectedTool: AssembleTool = .select
     @State private var shapeOptions = ShapeToolOptions()
+    @State private var isAspectRatioLocked = false
+    @State private var lockedAspectRatio: Double = 1.0
     var onLayerAdded: ((UUID) -> Void)?
 
     /// True when the selected layer is a single-stroke drawing shape that can
@@ -1005,6 +1007,42 @@ struct AssembleToolsSidebar: View {
                     .monospacedDigit()
                     .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    toggleAspectRatioLock()
+                } label: {
+                    Image(systemName: isAspectRatioLocked ? "lock.fill" : "lock.open")
+                        .foregroundStyle(isAspectRatioLocked ? theme.accent : theme.secondaryText)
+                }
+                .buttonStyle(.borderless)
+                .help(isAspectRatioLocked ? "Unlock aspect ratio" : "Lock aspect ratio")
+
+                Text(isAspectRatioLocked ? "Locked" : "Unlocked")
+                    .font(.caption)
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(1)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    ForEach(AspectRatioPreset.allCases) { preset in
+                        Button {
+                            applyAspectRatioPreset(preset)
+                        } label: {
+                            Text(preset.displayName)
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .foregroundStyle(theme.text)
+                                .background(theme.secondaryText.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
             }
 
             HStack(spacing: 8) {
@@ -1255,16 +1293,38 @@ struct AssembleToolsSidebar: View {
     }
 
     private var scaleXBinding: Binding<Double> {
-        makeTransformBinding(
-            get: { $0.scaleX },
-            set: { $0.scaleX = $1 }
+        Binding(
+            get: {
+                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                return layers[layerIndex].transform.scaleX
+            },
+            set: { newValue in
+                guard let layerIndex = selectedShapeIndex else { return }
+                var transform = layers[layerIndex].transform
+                transform.scaleX = newValue
+                if isAspectRatioLocked, transform.scaleY > 0 {
+                    transform.scaleY = newValue / lockedAspectRatio
+                }
+                layers[layerIndex].transform = transform
+            }
         )
     }
 
     private var scaleYBinding: Binding<Double> {
-        makeTransformBinding(
-            get: { $0.scaleY },
-            set: { $0.scaleY = $1 }
+        Binding(
+            get: {
+                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                return layers[layerIndex].transform.scaleY
+            },
+            set: { newValue in
+                guard let layerIndex = selectedShapeIndex else { return }
+                var transform = layers[layerIndex].transform
+                transform.scaleY = newValue
+                if isAspectRatioLocked, transform.scaleY > 0 {
+                    transform.scaleX = newValue * lockedAspectRatio
+                }
+                layers[layerIndex].transform = transform
+            }
         )
     }
 
@@ -1351,6 +1411,27 @@ struct AssembleToolsSidebar: View {
         layers[layerIndex].source = .drawing(drawing)
     }
 
+    private func toggleAspectRatioLock() {
+        isAspectRatioLocked.toggle()
+        if isAspectRatioLocked, let layerIndex = selectedShapeIndex {
+            let transform = layers[layerIndex].transform
+            lockedAspectRatio = transform.scaleY > 0 ? transform.scaleX / transform.scaleY : 1.0
+        }
+    }
+
+    private func applyAspectRatioPreset(_ preset: AspectRatioPreset) {
+        guard let layerIndex = selectedShapeIndex else { return }
+        let ratio = preset.ratio
+        var transform = layers[layerIndex].transform
+        let currentScale = sqrt(transform.scaleX * transform.scaleY)
+        transform.scaleX = currentScale * sqrt(ratio)
+        transform.scaleY = currentScale / sqrt(ratio)
+        layers[layerIndex].transform = transform
+        if isAspectRatioLocked {
+            lockedAspectRatio = ratio
+        }
+    }
+
     // MARK: - Actions
 
     private func select(tool: AssembleTool) {
@@ -1396,6 +1477,37 @@ struct AssembleToolsSidebar: View {
         let source = Source.text(textSource)
         if let id = store.addLayerToActiveCue(source: source, name: "Text") {
             onLayerAdded?(id)
+        }
+    }
+}
+
+/// Common aspect-ratio presets for the transform panel.
+enum AspectRatioPreset: String, CaseIterable, Identifiable {
+    case square
+    case fourThree
+    case sixteenNine
+    case nineSixteen
+    case twentyOneNine
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .square: return "1:1"
+        case .fourThree: return "4:3"
+        case .sixteenNine: return "16:9"
+        case .nineSixteen: return "9:16"
+        case .twentyOneNine: return "21:9"
+        }
+    }
+
+    var ratio: Double {
+        switch self {
+        case .square: return 1.0
+        case .fourThree: return 4.0 / 3.0
+        case .sixteenNine: return 16.0 / 9.0
+        case .nineSixteen: return 9.0 / 16.0
+        case .twentyOneNine: return 21.0 / 9.0
         }
     }
 }
