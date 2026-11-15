@@ -1285,8 +1285,11 @@ struct AssembleToolsSidebar: View {
             set: { newValue in
                 guard let layerIndex = selectedShapeIndex else { return }
                 var transform = layers[layerIndex].transform
-                transform.scaleX = newValue
-                transform.scaleY = newValue
+                let currentScale = (transform.scaleX + transform.scaleY) / 2
+                guard currentScale > 0 else { return }
+                let ratio = newValue / currentScale
+                transform.scaleX *= ratio
+                transform.scaleY *= ratio
                 layers[layerIndex].transform = transform
             }
         )
