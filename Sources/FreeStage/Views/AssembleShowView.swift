@@ -24,6 +24,10 @@ struct AssembleShowView: View {
     @State private var isAddingNDI = false
     @State private var isAddingSyphon = false
 
+    /// Sentinel ID used to represent the presenter segment's camera row in the
+    /// Assemble layer list. It never collides with real layer IDs.
+    static let cameraRowID = UUID()
+
     // MARK: - Panel widths
 
     private let cueGridHeightFraction: CGFloat = 0.45
@@ -380,8 +384,16 @@ struct AssembleShowView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(theme.selected.opacity(0.08))
+        .background(isCameraRowSelected ? theme.selected.opacity(0.2) : theme.selected.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedLayerID = Self.cameraRowID
+        }
+    }
+
+    private var isCameraRowSelected: Bool {
+        selectedLayerID == Self.cameraRowID
     }
 
     private var globalLayersColumn: some View {
@@ -445,7 +457,9 @@ struct AssembleShowView: View {
         case .tools:
             AssembleToolsSidebar(
                 selectedLayerID: $selectedLayerID,
-                layers: activeLayersBinding
+                layers: activeLayersBinding,
+                cameraSegmentID: store.activeSegment?.id,
+                cameraRowID: Self.cameraRowID
             ) { addedID in
                 selectedLayerID = addedID
             }
@@ -868,11 +882,28 @@ struct AssembleToolsSidebar: View {
     @Environment(AppSettings.self) private var appSettings
     @Binding var selectedLayerID: UUID?
     @Binding var layers: [Layer]
+    var cameraSegmentID: UUID?
+    var cameraRowID: UUID
     @State private var selectedTool: AssembleTool = .select
     @State private var shapeOptions = ShapeToolOptions()
     @State private var isAspectRatioLocked = false
     @State private var lockedAspectRatio: Double = 1.0
     var onLayerAdded: ((UUID) -> Void)?
+
+    /// True when the presenter-segment camera row is selected.
+    private var isCameraSelected: Bool {
+        selectedLayerID == cameraRowID
+    }
+
+    private var selectedCameraSegment: PresenterSegment? {
+        guard let cameraSegmentID,
+              let rundown = store.presenterRundown else { return nil }
+        return rundown.segments.first(where: { $0.id == cameraSegmentID })
+    }
+
+    private var selectedCameraSettings: CameraSettings? {
+        selectedCameraSegment?.cameraSettings
+    }
 
     /// Index of any selected cue layer, regardless of source type.
     private var selectedLayerIndex: Int? {
@@ -898,6 +929,9 @@ struct AssembleToolsSidebar: View {
     }
 
     private var panelTitle: String {
+        if isCameraSelected, let segment = selectedCameraSegment {
+            return segment.cameraAngle.displayName
+        }
         if let layerIndex = selectedLayerIndex {
             if let tool = selectedShapeTool {
                 return "\(tool.displayName) Properties"
@@ -923,7 +957,7 @@ struct AssembleToolsSidebar: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
 
-            if selectedLayerIndex != nil || selectedTool.hasOptions {
+            if selectedLayerIndex != nil || isCameraSelected || selectedTool.hasOptions {
                 Divider()
                     .padding(.vertical, 12)
 
@@ -942,7 +976,9 @@ struct AssembleToolsSidebar: View {
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
 
-            if selectedLayerIndex != nil {
+            if isCameraSelected {
+                cameraTransformOptions
+            } else if selectedLayerIndex != nil {
                 transformOptions
             }
 
@@ -1071,6 +1107,48 @@ struct AssembleToolsSidebar: View {
                     .frame(width: 16, alignment: .leading)
                 Slider(value: rotationBinding, in: 0...360, step: 1)
                 Text("\(Int(rotationBinding.wrappedValue))°")
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var cameraTransformOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Transform")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                Text("X")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: cameraPanXBinding, in: 0...1)
+                Text("\(Int(cameraPanXBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("Y")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: cameraPanYBinding, in: 0...1)
+                Text("\(Int(cameraPanYBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("S")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: cameraZoomBinding, in: 0.05...3.0)
+                Text("\(Int(cameraZoomBinding.wrappedValue * 100))%")
                     .monospacedDigit()
                     .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
@@ -1410,6 +1488,48 @@ struct AssembleToolsSidebar: View {
                 transform.scaleX *= ratio
                 transform.scaleY *= ratio
                 layers[layerIndex].transform = transform
+            }
+        )
+    }
+
+    private var cameraPanXBinding: Binding<Double> {
+        Binding(
+            get: { self.selectedCameraSettings?.panX ?? 0.5 },
+            set: { newValue in
+                guard let segmentID = self.cameraSegmentID else { return }
+                self.store.updatePresenterSegment(id: segmentID) { segment in
+                    var settings = segment.cameraSettings ?? CameraSettings()
+                    settings.panX = newValue
+                    segment.cameraSettings = settings
+                }
+            }
+        )
+    }
+
+    private var cameraPanYBinding: Binding<Double> {
+        Binding(
+            get: { self.selectedCameraSettings?.panY ?? 0.5 },
+            set: { newValue in
+                guard let segmentID = self.cameraSegmentID else { return }
+                self.store.updatePresenterSegment(id: segmentID) { segment in
+                    var settings = segment.cameraSettings ?? CameraSettings()
+                    settings.panY = newValue
+                    segment.cameraSettings = settings
+                }
+            }
+        )
+    }
+
+    private var cameraZoomBinding: Binding<Double> {
+        Binding(
+            get: { self.selectedCameraSettings?.zoom ?? 1.0 },
+            set: { newValue in
+                guard let segmentID = self.cameraSegmentID else { return }
+                self.store.updatePresenterSegment(id: segmentID) { segment in
+                    var settings = segment.cameraSettings ?? CameraSettings()
+                    settings.zoom = newValue
+                    segment.cameraSettings = settings
+                }
             }
         )
     }

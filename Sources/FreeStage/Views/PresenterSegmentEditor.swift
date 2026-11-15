@@ -41,7 +41,6 @@ struct PresenterSegmentEditor: View {
                 }
                 .pickerStyle(.segmented)
 
-                cameraSettingsSection
                 gimbalSection
                 chromaKeySection
             }
@@ -101,30 +100,6 @@ struct PresenterSegmentEditor: View {
                 VideoClipEditorView(clip: binding)
                     .frame(minWidth: 820, minHeight: 600)
             }
-        }
-    }
-
-    // MARK: - Camera settings
-
-    private var cameraSettingsSection: some View {
-        let binding = cameraSettingsBinding
-        return GroupBox("Camera Framing") {
-            VStack(alignment: .leading, spacing: 8) {
-                Slider(value: binding.zoom, in: 0.1...3.0) {
-                    Text("Zoom \(binding.wrappedValue.zoom, specifier: "%.2f")")
-                }
-                HStack {
-                    Text("Pan X")
-                    Slider(value: binding.panX, in: 0...1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                HStack {
-                    Text("Pan Y")
-                    Slider(value: binding.panY, in: 0...1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
