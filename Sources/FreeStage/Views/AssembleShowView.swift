@@ -12,12 +12,15 @@ import SwiftUI
 struct AssembleShowView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(\.cameraCaptureManager) private var cameraCaptureManager
+    @Environment(\.screenCaptureManager) private var screenCaptureManager
     @State private var selectedLayerID: UUID?
+    @State private var rightPanelTab: RightPanelTab = .tools
 
     // MARK: - Panel widths
 
     private let leftColumnWidth: CGFloat = 320
-    private let rightColumnWidth: CGFloat = 220
+    private let rightColumnWidth: CGFloat = 360
     private let cueGridHeightFraction: CGFloat = 0.45
 
     var body: some View {
@@ -39,6 +42,19 @@ struct AssembleShowView: View {
                 rightColumn
                     .frame(width: rightColumnWidth)
             }
+        }
+        .onChange(of: requiredCameraIDs) { _, _ in
+            updateCameraCapture()
+        }
+        .onChange(of: requiredScreenIDs) { _, _ in
+            updateScreenCapture()
+        }
+        .onChange(of: store.activeSegmentID) { _, _ in
+            updateCameraCapture()
+        }
+        .task {
+            updateCameraCapture()
+            updateScreenCapture()
         }
     }
 
@@ -291,19 +307,102 @@ struct AssembleShowView: View {
 
     private var rightColumn: some View {
         VStack(spacing: 0) {
-            Text("Tools")
-                .font(.headline)
-                .foregroundStyle(theme.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            rightColumnHeader
                 .padding(12)
 
-            AssembleToolsSidebar { addedID in
-                selectedLayerID = addedID
-            }
+            rightColumnContent
 
             Spacer()
         }
         .background(theme.panelBackground)
+    }
+
+    @ViewBuilder
+    private var rightColumnHeader: some View {
+        if store.show.kind == .presenter {
+            Picker("Panel", selection: $rightPanelTab) {
+                ForEach(RightPanelTab.allCases) { tab in
+                    Text(tab.displayName).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+        } else {
+            Text("Tools")
+                .font(.headline)
+                .foregroundStyle(theme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var rightColumnContent: some View {
+        switch rightPanelTab {
+        case .tools:
+            AssembleToolsSidebar { addedID in
+                selectedLayerID = addedID
+            }
+            .padding(.horizontal, 12)
+        case .setup:
+            ShowSetupPanel()
+        }
+    }
+
+    // MARK: - Capture lifecycle
+
+    private var requiredCameraIDs: Set<String> {
+        guard store.show.kind == .presenter else { return [] }
+        var ids = Set<String>()
+        ids.formUnion(cameraIDs(for: store.presenterLiveScene))
+        ids.formUnion(cameraIDs(for: store.presenterActiveScene))
+        if let primaryID = store.presenterCameraID(for: .primary) {
+            ids.insert(primaryID)
+        }
+        if let secondaryID = store.presenterCameraID(for: .secondary) {
+            ids.insert(secondaryID)
+        }
+        return ids
+    }
+
+    private var requiredScreenIDs: Set<CGDirectDisplayID> {
+        guard store.show.kind == .presenter else { return [] }
+        var ids = Set<CGDirectDisplayID>()
+        ids.formUnion(screenIDs(for: store.presenterActiveScene))
+        ids.formUnion(screenIDs(for: store.presenterLiveScene))
+        if let globalLayers = store.presenterRundown?.globalLayers {
+            ids.formUnion(screenIDs(in: globalLayers))
+        }
+        return ids
+    }
+
+    private func cameraIDs(for scene: Scene?) -> Set<String> {
+        guard let scene else { return [] }
+        var ids = Set<String>()
+        for layer in scene.layers {
+            if case .camera(let deviceID) = layer.source {
+                ids.insert(deviceID)
+            }
+        }
+        return ids
+    }
+
+    private func screenIDs(for scene: Scene?) -> Set<CGDirectDisplayID> {
+        guard let scene else { return [] }
+        return screenIDs(in: scene.layers)
+    }
+
+    private func screenIDs(in layers: [Layer]) -> Set<CGDirectDisplayID> {
+        Set(layers.compactMap { layer -> CGDirectDisplayID? in
+            if case .screen(let displayID) = layer.source { return displayID }
+            return nil
+        })
+    }
+
+    private func updateCameraCapture() {
+        cameraCaptureManager?.syncCaptures(requiredIDs: requiredCameraIDs)
+    }
+
+    private func updateScreenCapture() {
+        screenCaptureManager?.syncCaptures(requiredIDs: requiredScreenIDs)
     }
 
     // MARK: - Helpers
@@ -578,6 +677,20 @@ enum AssembleTool: String, CaseIterable, Identifiable {
         case .select: return "arrow.up.left.and.arrow.down.right"
         case .rectangle: return "rectangle"
         case .text: return "textformat"
+        }
+    }
+}
+
+private enum RightPanelTab: String, CaseIterable, Identifiable {
+    case tools
+    case setup
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .tools: return "Tools"
+        case .setup: return "Setup"
         }
     }
 }
