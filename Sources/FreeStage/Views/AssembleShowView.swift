@@ -879,6 +879,12 @@ struct AssembleToolsSidebar: View {
             break
         case .rectangle:
             addRectangleLayer()
+        case .ellipse:
+            addShapeLayer(tool: .ellipse, name: "Ellipse")
+        case .line:
+            addShapeLayer(tool: .line, name: "Line")
+        case .arrow:
+            addShapeLayer(tool: .arrow, name: "Arrow")
         case .text:
             addTextLayer()
         }
@@ -898,6 +904,48 @@ struct AssembleToolsSidebar: View {
         }
     }
 
+    private func addShapeLayer(tool: DrawingTool, name: String) {
+        let style = appSettings.defaultShowStyle
+        let stroke = DrawingStroke(
+            points: defaultShapePoints(for: tool),
+            color: style.primaryColor,
+            width: 4,
+            tool: tool
+        )
+        let source = Source.drawing(DrawingSource(
+            strokes: [stroke],
+            tool: tool,
+            color: style.primaryColor,
+            brushWidth: 4
+        ))
+        let transform = ItemTransform(
+            x: 0.5, y: 0.5,
+            scaleX: 1.0, scaleY: 1.0,
+            rotation: 0,
+            crop: .zero
+        )
+        if let id = store.addLayerToActiveCue(source: source, name: name, transform: transform) {
+            onLayerAdded?(id)
+        }
+    }
+
+    private func defaultShapePoints(for tool: DrawingTool) -> [DrawingPoint] {
+        switch tool {
+        case .rectangle, .ellipse:
+            return [
+                DrawingPoint(x: 0.35, y: 0.40),
+                DrawingPoint(x: 0.65, y: 0.60)
+            ]
+        case .line, .arrow:
+            return [
+                DrawingPoint(x: 0.30, y: 0.50),
+                DrawingPoint(x: 0.70, y: 0.50)
+            ]
+        default:
+            return []
+        }
+    }
+
     private func addTextLayer() {
         let textSource = TextSource(content: "New Text")
         let source = Source.text(textSource)
@@ -910,6 +958,9 @@ struct AssembleToolsSidebar: View {
 enum AssembleTool: String, CaseIterable, Identifiable {
     case select
     case rectangle
+    case ellipse
+    case line
+    case arrow
     case text
 
     var id: String { rawValue }
@@ -918,6 +969,9 @@ enum AssembleTool: String, CaseIterable, Identifiable {
         switch self {
         case .select: return "Select"
         case .rectangle: return "Rectangle"
+        case .ellipse: return "Ellipse"
+        case .line: return "Line"
+        case .arrow: return "Arrow"
         case .text: return "Text"
         }
     }
@@ -926,6 +980,9 @@ enum AssembleTool: String, CaseIterable, Identifiable {
         switch self {
         case .select: return "arrow.up.left.and.arrow.down.right"
         case .rectangle: return "rectangle"
+        case .ellipse: return "oval"
+        case .line: return "minus"
+        case .arrow: return "arrow.right"
         case .text: return "textformat"
         }
     }
