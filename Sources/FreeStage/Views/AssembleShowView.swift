@@ -884,8 +884,11 @@ struct AssembleToolsSidebar: View {
     }
 
     private var panelTitle: String {
-        if let tool = selectedShapeTool {
-            return "\(tool.displayName) Properties"
+        if let layerIndex = selectedShapeIndex {
+            if let tool = selectedShapeTool {
+                return "\(tool.displayName) Properties"
+            }
+            return layers[layerIndex].name
         }
         return "\(selectedTool.displayName) Options"
     }
@@ -906,7 +909,7 @@ struct AssembleToolsSidebar: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
 
-            if effectiveTool.hasOptions {
+            if effectiveTool.hasOptions || selectedShapeIndex != nil {
                 Divider()
                     .padding(.vertical, 12)
 
@@ -925,17 +928,85 @@ struct AssembleToolsSidebar: View {
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
 
-            if effectiveTool.supportsFill {
+            transformOptions
+
+            if selectedShapeTool?.supportsFill == true {
                 fillOptions
             }
 
-            strokeOptions
+            if selectedShapeTool != nil {
+                strokeOptions
+            }
 
-            if effectiveTool == .rectangle {
+            if selectedShapeTool == .rectangle {
                 cornerRadiusOptions
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var transformOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Transform")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                Text("X")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: positionXBinding, in: 0...1)
+                Text("\(Int(positionXBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("Y")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: positionYBinding, in: 0...1)
+                Text("\(Int(positionYBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("W")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: scaleXBinding, in: 0.05...3.0)
+                Text("\(Int(scaleXBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("H")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: scaleYBinding, in: 0.05...3.0)
+                Text("\(Int(scaleYBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("R")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: rotationBinding, in: 0...360, step: 1)
+                Text("\(Int(rotationBinding.wrappedValue))°")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private var fillOptions: some View {
@@ -1155,6 +1226,59 @@ struct AssembleToolsSidebar: View {
         makeBinding(
             get: { $0.cornerRadius },
             set: { $0.cornerRadius = $1 }
+        )
+    }
+
+    private var positionXBinding: Binding<Double> {
+        makeTransformBinding(
+            get: { $0.x },
+            set: { $0.x = $1 }
+        )
+    }
+
+    private var positionYBinding: Binding<Double> {
+        makeTransformBinding(
+            get: { $0.y },
+            set: { $0.y = $1 }
+        )
+    }
+
+    private var scaleXBinding: Binding<Double> {
+        makeTransformBinding(
+            get: { $0.scaleX },
+            set: { $0.scaleX = $1 }
+        )
+    }
+
+    private var scaleYBinding: Binding<Double> {
+        makeTransformBinding(
+            get: { $0.scaleY },
+            set: { $0.scaleY = $1 }
+        )
+    }
+
+    private var rotationBinding: Binding<Double> {
+        makeTransformBinding(
+            get: { $0.rotation },
+            set: { $0.rotation = $1 }
+        )
+    }
+
+    private func makeTransformBinding<Value>(
+        get: @escaping (ItemTransform) -> Value,
+        set: @escaping (inout ItemTransform, Value) -> Void
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedShapeIndex else { return get(.identity) }
+                return get(layers[layerIndex].transform)
+            },
+            set: { newValue in
+                guard let layerIndex = selectedShapeIndex else { return }
+                var transform = layers[layerIndex].transform
+                set(&transform, newValue)
+                layers[layerIndex].transform = transform
+            }
         )
     }
 
