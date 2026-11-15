@@ -22,6 +22,25 @@ struct WorkspaceModeContainer: View {
                 showWorkspace
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                workspaceModePicker
+            }
+        }
+    }
+
+    private var workspaceModePicker: some View {
+        Picker("Mode", selection: Binding(
+            get: { store.workspaceMode },
+            set: { store.workspaceMode = $0 }
+        )) {
+            ForEach(WorkspaceMode.allCases) { mode in
+                Label(mode.displayName, systemImage: mode.systemImage)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 260)
     }
 
     @ViewBuilder

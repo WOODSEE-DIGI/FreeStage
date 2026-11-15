@@ -40,11 +40,6 @@ struct AssembleShowView: View {
                     .frame(width: rightColumnWidth)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                modePicker
-            }
-        }
     }
 
     // MARK: - Left column
@@ -304,20 +299,6 @@ struct AssembleShowView: View {
             Spacer()
         }
         .background(theme.panelBackground)
-    }
-
-    private var modePicker: some View {
-        Picker("Mode", selection: Binding(
-            get: { store.workspaceMode },
-            set: { store.workspaceMode = $0 }
-        )) {
-            ForEach(WorkspaceMode.allCases) { mode in
-                Label(mode.displayName, systemImage: mode.systemImage)
-                    .tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 260)
     }
 
     // MARK: - Helpers
