@@ -270,6 +270,16 @@ struct FreeStageApp: App {
     }
 
     private func writeShow(to url: URL, isSaveAs: Bool) {
+        // Keep the in-memory show name in sync with the filename the user
+        // chose in the save panel. Without this, Save As writes the package
+        // under a new name while the workspace header still shows the old
+        // default (e.g. "Untitled Show").
+        if isSaveAs {
+            let displayName = url.deletingPathExtension().lastPathComponent
+            if !displayName.isEmpty {
+                store.show.name = displayName
+            }
+        }
         let snapshot = store.documentSnapshot()
         Task {
             do {

@@ -10,6 +10,7 @@ import SwiftUI
 struct ShowStyleEditorView: View {
     @Environment(ShowStore.self) private var store
     @Environment(AppSettings.self) private var settings
+    @Environment(\.dismiss) private var dismiss
     @State private var presetName = ""
     @State private var showingSaveAlert = false
 
@@ -99,6 +100,13 @@ struct ShowStyleEditorView: View {
         .formStyle(.grouped)
         .padding()
         .frame(minWidth: 360, idealWidth: 420)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
+        }
         .alert("Preset Saved", isPresented: $showingSaveAlert) {
             Button("OK", role: .cancel) {}
         } message: {
