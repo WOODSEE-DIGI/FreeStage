@@ -384,6 +384,27 @@ final class ShowStore: NSObject {
         selectedLayerID = layer.id
     }
 
+    /// Add a layer to whichever container owns the active cue: a theatre scene
+    /// or a presenter segment. Used by the Assemble workspace so its tools work
+    /// for both show kinds without callers needing to branch.
+    @discardableResult
+    func addLayerToActiveCue(source: Source, name: String? = nil, transform: ItemTransform = .identity) -> UUID? {
+        if show.kind == .presenter {
+            guard let segmentID = activeSegmentID else { return nil }
+            let layer = Layer(name: name, source: source, transform: transform)
+            updatePresenterSegment(id: segmentID) { $0.layers.append(layer) }
+            selectedLayerID = layer.id
+            return layer.id
+        }
+
+        guard let scene = activeScene,
+              let sceneIndex = show.scenes.firstIndex(where: { $0.id == scene.id }) else { return nil }
+        let layer = Layer(name: name, source: source, transform: transform)
+        show.scenes[sceneIndex].layers.append(layer)
+        selectedLayerID = layer.id
+        return layer.id
+    }
+
     // MARK: - Layer selection & mutation
 
     /// The selected layer, which may live in the active scene or in the global show layers.

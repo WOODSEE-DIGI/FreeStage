@@ -12,6 +12,7 @@ import SwiftUI
 struct AssembleShowView: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @State private var selectedLayerID: UUID?
 
     // MARK: - Panel widths
 
@@ -278,7 +279,10 @@ struct AssembleShowView: View {
             }
             .padding(12)
 
-            LayerStackView(layers: activeLayersBinding)
+            LayerStackView(
+                layers: activeLayersBinding,
+                selectedLayerID: $selectedLayerID
+            )
         }
         .background(theme.panelBackground)
     }
@@ -293,7 +297,9 @@ struct AssembleShowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
 
-            AssembleToolsSidebar()
+            AssembleToolsSidebar { addedID in
+                selectedLayerID = addedID
+            }
 
             Spacer()
         }
@@ -448,6 +454,7 @@ private struct CueCardCell: View {
 
 struct LayerStackView: View {
     @Binding var layers: [Layer]
+    @Binding var selectedLayerID: UUID?
     @Environment(ThemeStore.self) private var theme
 
     var body: some View {
@@ -471,9 +478,19 @@ struct LayerStackView: View {
                         .frame(width: 80)
                 }
                 .padding(.vertical, 4)
+                .background(isSelected(layer: layer) ? theme.selected.opacity(0.2) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedLayerID = layer.id
+                }
             }
             .onMove(perform: move)
         }
+    }
+
+    private func isSelected(layer: Layer) -> Bool {
+        selectedLayerID == layer.id
     }
 
     private func opacityBinding(for layer: Layer) -> Binding<Double> {
@@ -501,19 +518,57 @@ struct LayerStackView: View {
 // MARK: - Tools sidebar
 
 struct AssembleToolsSidebar: View {
+    @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
+    @Environment(AppSettings.self) private var appSettings
     @State private var selectedTool: AssembleTool = .select
+    var onLayerAdded: ((UUID) -> Void)?
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(AssembleTool.allCases) { tool in
                 ToolButton(tool: tool, isSelected: selectedTool == tool) {
-                    selectedTool = tool
+                    select(tool: tool)
                 }
             }
             Spacer()
         }
         .padding(.horizontal, 12)
+    }
+
+    private func select(tool: AssembleTool) {
+        selectedTool = tool
+
+        switch tool {
+        case .select:
+            break
+        case .rectangle:
+            addRectangleLayer()
+        case .text:
+            addTextLayer()
+        }
+    }
+
+    private func addRectangleLayer() {
+        let style = appSettings.defaultShowStyle
+        let source = Source.color(style.primaryColor)
+        let transform = ItemTransform(
+            x: 0.5, y: 0.5,
+            scaleX: 0.3, scaleY: 0.3,
+            rotation: 0,
+            crop: .zero
+        )
+        if let id = store.addLayerToActiveCue(source: source, name: "Rectangle", transform: transform) {
+            onLayerAdded?(id)
+        }
+    }
+
+    private func addTextLayer() {
+        let textSource = TextSource(content: "New Text")
+        let source = Source.text(textSource)
+        if let id = store.addLayerToActiveCue(source: source, name: "Text") {
+            onLayerAdded?(id)
+        }
     }
 }
 
