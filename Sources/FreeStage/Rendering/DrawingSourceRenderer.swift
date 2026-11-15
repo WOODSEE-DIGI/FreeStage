@@ -172,14 +172,11 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         let end = CGPoint(x: stroke.points[1].x * size.width, y: stroke.points[1].y * size.height)
         let rect = CGRect(origin: start, size: CGSize(width: end.x - start.x, height: end.y - start.y)).standardized
 
-        fillShape(rect: rect, stroke: stroke, in: context)
+        let cornerRadius = CGFloat(min(stroke.cornerRadius * min(size.width, size.height), min(rect.width, rect.height) / 2))
+        let roundedPath = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
 
-        let c = stroke.color
-        context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
-        context.setLineWidth(CGFloat(stroke.width))
-        context.setLineJoin(.round)
-        context.setBlendMode(.normal)
-        context.stroke(rect)
+        fillShape(rect: rect, stroke: stroke, in: context, path: { ctx, _ in ctx.addPath(roundedPath) })
+        strokePath(roundedPath, stroke: stroke, in: context, rect: rect)
     }
 
     private func drawEllipse(_ stroke: DrawingStroke, in context: CGContext, size: CGSize) {
@@ -188,13 +185,39 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         let end = CGPoint(x: stroke.points[1].x * size.width, y: stroke.points[1].y * size.height)
         let rect = CGRect(origin: start, size: CGSize(width: end.x - start.x, height: end.y - start.y)).standardized
 
-        fillShape(rect: rect, stroke: stroke, in: context, path: { ctx, rect in ctx.addEllipse(in: rect) })
+        let ellipsePath = CGPath(ellipseIn: rect, transform: nil)
+        fillShape(rect: rect, stroke: stroke, in: context, path: { ctx, _ in ctx.addPath(ellipsePath) })
+        strokePath(ellipsePath, stroke: stroke, in: context, rect: rect)
+    }
 
-        let c = stroke.color
-        context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
+    private func strokePath(_ path: CGPath, stroke: DrawingStroke, in context: CGContext, rect: CGRect) {
+        context.saveGState()
+        context.addPath(path)
         context.setLineWidth(CGFloat(stroke.width))
+        context.setLineJoin(.round)
+        context.setLineCap(.round)
         context.setBlendMode(.normal)
-        context.strokeEllipse(in: rect)
+
+        switch stroke.strokeStyle {
+        case .solid:
+            let c = stroke.color
+            context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
+            context.strokePath()
+        case .gradient:
+            context.replacePathWithStrokedPath()
+            context.clip()
+            drawLinearGradient(
+                in: context,
+                rect: rect,
+                startColor: stroke.strokeGradientStartColor,
+                endColor: stroke.strokeGradientEndColor,
+                angle: stroke.strokeGradientAngle
+            )
+        case .none:
+            break
+        }
+
+        context.restoreGState()
     }
 
     private func fillShape(
@@ -277,23 +300,43 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         path.move(to: start)
         path.addLine(to: end)
 
-        let c = stroke.color
-        context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
-        context.setLineWidth(CGFloat(stroke.width))
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        context.setBlendMode(.normal)
-        context.addPath(path)
-        context.strokePath()
+        let lineRect = CGRect(origin: start, size: CGSize(width: end.x - start.x, height: end.y - start.y)).standardized
+
+        if stroke.strokeStyle == .gradient {
+            context.saveGState()
+            context.addPath(path)
+            context.setLineWidth(CGFloat(stroke.width))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.replacePathWithStrokedPath()
+            context.clip()
+            drawLinearGradient(
+                in: context,
+                rect: lineRect,
+                startColor: stroke.strokeGradientStartColor,
+                endColor: stroke.strokeGradientEndColor,
+                angle: stroke.strokeGradientAngle
+            )
+            context.restoreGState()
+        } else if stroke.strokeStyle == .solid {
+            let c = stroke.color
+            context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
+            context.setLineWidth(CGFloat(stroke.width))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.setBlendMode(.normal)
+            context.addPath(path)
+            context.strokePath()
+        }
 
         if stroke.tool == .arrow {
-            drawArrowhead(at: end, from: start, in: context, color: c, width: stroke.width)
+            drawArrowhead(at: end, from: start, in: context, stroke: stroke)
         }
     }
 
-    private func drawArrowhead(at tip: CGPoint, from start: CGPoint, in context: CGContext, color: CGColorComponents, width: Double) {
+    private func drawArrowhead(at tip: CGPoint, from start: CGPoint, in context: CGContext, stroke: DrawingStroke) {
         let angle = atan2(tip.y - start.y, tip.x - start.x)
-        let headLength = CGFloat(max(width * 3, 12))
+        let headLength = CGFloat(max(stroke.width * 3, 12))
         let headAngle: CGFloat = .pi / 6
 
         let left = CGPoint(
@@ -311,12 +354,32 @@ final class DrawingSourceRenderer: SourceRenderer, @unchecked Sendable {
         path.move(to: tip)
         path.addLine(to: right)
 
-        context.setStrokeColor(CGColor(red: color.r, green: color.g, blue: color.b, alpha: color.a))
-        context.setLineWidth(CGFloat(width))
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        context.addPath(path)
-        context.strokePath()
+        if stroke.strokeStyle == .gradient {
+            context.saveGState()
+            context.addPath(path)
+            context.setLineWidth(CGFloat(stroke.width))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.replacePathWithStrokedPath()
+            context.clip()
+            let headRect = CGRect(origin: tip, size: .zero).insetBy(dx: -headLength * 2, dy: -headLength * 2)
+            drawLinearGradient(
+                in: context,
+                rect: headRect,
+                startColor: stroke.strokeGradientStartColor,
+                endColor: stroke.strokeGradientEndColor,
+                angle: stroke.strokeGradientAngle
+            )
+            context.restoreGState()
+        } else {
+            let c = stroke.color
+            context.setStrokeColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: c.a))
+            context.setLineWidth(CGFloat(stroke.width))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.addPath(path)
+            context.strokePath()
+        }
     }
 
     private func drawText(_ stroke: DrawingStroke, in context: CGContext, size: CGSize) {

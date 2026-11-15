@@ -443,7 +443,10 @@ struct AssembleShowView: View {
     private var rightColumnContent: some View {
         switch rightPanelTab {
         case .tools:
-            AssembleToolsSidebar { addedID in
+            AssembleToolsSidebar(
+                selectedLayerID: $selectedLayerID,
+                layers: activeLayersBinding
+            ) { addedID in
                 selectedLayerID = addedID
             }
             .padding(.horizontal, 12)
@@ -856,15 +859,46 @@ struct AssembleToolsSidebar: View {
     @Environment(ShowStore.self) private var store
     @Environment(ThemeStore.self) private var theme
     @Environment(AppSettings.self) private var appSettings
+    @Binding var selectedLayerID: UUID?
+    @Binding var layers: [Layer]
     @State private var selectedTool: AssembleTool = .select
     @State private var shapeOptions = ShapeToolOptions()
     var onLayerAdded: ((UUID) -> Void)?
+
+    /// True when the selected layer is a single-stroke drawing shape that can
+    /// be edited with the same controls used for tool options.
+    private var selectedShapeIndex: Int? {
+        guard let selectedLayerID,
+              let layerIndex = layers.firstIndex(where: { $0.id == selectedLayerID }),
+              case .drawing(let drawing) = layers[layerIndex].source,
+              drawing.strokes.first != nil else { return nil }
+        return layerIndex
+    }
+
+    private var selectedShapeTool: AssembleTool? {
+        guard let layerIndex = selectedShapeIndex,
+              case .drawing(let drawing) = layers[layerIndex].source,
+              let stroke = drawing.strokes.first,
+              let tool = AssembleTool(drawingTool: stroke.tool) else { return nil }
+        return tool
+    }
+
+    private var panelTitle: String {
+        if let tool = selectedShapeTool {
+            return "\(tool.displayName) Properties"
+        }
+        return "\(selectedTool.displayName) Options"
+    }
+
+    private var effectiveTool: AssembleTool {
+        selectedShapeTool ?? selectedTool
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
                 ForEach(AssembleTool.allCases) { tool in
-                    ToolButton(tool: tool, isSelected: selectedTool == tool) {
+                    ToolButton(tool: tool, isSelected: effectiveTool == tool) {
                         select(tool: tool)
                     }
                 }
@@ -872,7 +906,7 @@ struct AssembleToolsSidebar: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
 
-            if selectedTool.hasOptions {
+            if effectiveTool.hasOptions {
                 Divider()
                     .padding(.vertical, 12)
 
@@ -886,15 +920,20 @@ struct AssembleToolsSidebar: View {
 
     private var toolOptionsPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("\(selectedTool.displayName) Options")
+            Text(panelTitle)
                 .font(.subheadline.bold())
                 .foregroundStyle(theme.text)
+                .lineLimit(1)
 
-            if selectedTool.supportsFill {
+            if effectiveTool.supportsFill {
                 fillOptions
             }
 
             strokeOptions
+
+            if effectiveTool == .rectangle {
+                cornerRadiusOptions
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -906,7 +945,7 @@ struct AssembleToolsSidebar: View {
                 .foregroundStyle(theme.secondaryText)
                 .lineLimit(1)
 
-            Picker("Fill Style", selection: $shapeOptions.fillStyle) {
+            Picker("Fill Style", selection: fillStyleBinding) {
                 ForEach(ShapeFillStyle.allCases) { style in
                     Text(style.displayName).tag(style)
                 }
@@ -914,17 +953,17 @@ struct AssembleToolsSidebar: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            switch shapeOptions.fillStyle {
+            switch fillStyleBinding.wrappedValue {
             case .solid:
-                colorRow("Color", color: $shapeOptions.fillColor)
+                colorRow("Color", color: fillColorBinding)
             case .gradient:
-                colorRow("Start", color: $shapeOptions.gradientStartColor)
-                colorRow("End", color: $shapeOptions.gradientEndColor)
+                colorRow("Start", color: gradientStartColorBinding)
+                colorRow("End", color: gradientEndColorBinding)
                 HStack(spacing: 8) {
                     Text("Angle")
                         .lineLimit(1)
-                    Slider(value: $shapeOptions.gradientAngle, in: 0...360, step: 1)
-                    Text("\(Int(shapeOptions.gradientAngle))°")
+                    Slider(value: gradientAngleBinding, in: 0...360, step: 1)
+                    Text("\(Int(gradientAngleBinding.wrappedValue))°")
                         .monospacedDigit()
                         .frame(width: 36, alignment: .trailing)
                         .lineLimit(1)
@@ -937,27 +976,71 @@ struct AssembleToolsSidebar: View {
 
     private var strokeOptions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(selectedTool == .line || selectedTool == .arrow ? "Line" : "Border")
+            Text(effectiveTool == .line || effectiveTool == .arrow ? "Line" : "Border")
                 .font(.caption.bold())
                 .foregroundStyle(theme.secondaryText)
                 .lineLimit(1)
 
-            Toggle("Enabled", isOn: $shapeOptions.strokeEnabled)
+            Toggle("Enabled", isOn: strokeEnabledBinding)
                 .foregroundStyle(theme.text)
-                .disabled(!selectedTool.canDisableStroke)
+                .disabled(!effectiveTool.canDisableStroke)
 
-            if shapeOptions.strokeEnabled {
-                colorRow("Color", color: $shapeOptions.strokeColor)
+            if strokeEnabledBinding.wrappedValue {
+                Picker("Stroke Style", selection: strokeStyleBinding) {
+                    ForEach(ShapeFillStyle.allCases.filter { $0 != .none }) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                switch strokeStyleBinding.wrappedValue {
+                case .solid:
+                    colorRow("Color", color: strokeColorBinding)
+                case .gradient:
+                    colorRow("Start", color: strokeGradientStartColorBinding)
+                    colorRow("End", color: strokeGradientEndColorBinding)
+                    HStack(spacing: 8) {
+                        Text("Angle")
+                            .lineLimit(1)
+                        Slider(value: strokeGradientAngleBinding, in: 0...360, step: 1)
+                        Text("\(Int(strokeGradientAngleBinding.wrappedValue))°")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+                            .lineLimit(1)
+                    }
+                case .none:
+                    EmptyView()
+                }
 
                 HStack(spacing: 8) {
                     Text("Width")
                         .lineLimit(1)
-                    Slider(value: $shapeOptions.strokeWidth, in: 1...32, step: 1)
-                    Text("\(Int(shapeOptions.strokeWidth))")
+                    Slider(value: strokeWidthBinding, in: 1...32, step: 1)
+                    Text("\(Int(strokeWidthBinding.wrappedValue))")
                         .monospacedDigit()
                         .frame(width: 24, alignment: .trailing)
                         .lineLimit(1)
                 }
+            }
+        }
+    }
+
+    private var cornerRadiusOptions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Corners")
+                .font(.caption.bold())
+                .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                Text("Radius")
+                    .lineLimit(1)
+                Slider(value: cornerRadiusBinding, in: 0...0.25, step: 0.01)
+                Text("\(Int(cornerRadiusBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 36, alignment: .trailing)
+                    .lineLimit(1)
             }
         }
     }
@@ -981,6 +1064,139 @@ struct AssembleToolsSidebar: View {
             .frame(width: 44, height: 28)
         }
     }
+
+    // MARK: - Bindings
+
+    private var fillStyleBinding: Binding<ShapeFillStyle> {
+        makeBinding(
+            get: { $0.fillStyle },
+            set: { $0.fillStyle = $1 }
+        )
+    }
+
+    private var fillColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.fillColor },
+            set: { $0.fillColor = $1 }
+        )
+    }
+
+    private var gradientStartColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.gradientStartColor },
+            set: { $0.gradientStartColor = $1 }
+        )
+    }
+
+    private var gradientEndColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.gradientEndColor },
+            set: { $0.gradientEndColor = $1 }
+        )
+    }
+
+    private var gradientAngleBinding: Binding<Double> {
+        makeBinding(
+            get: { $0.gradientAngle },
+            set: { $0.gradientAngle = $1 }
+        )
+    }
+
+    private var strokeEnabledBinding: Binding<Bool> {
+        makeBinding(
+            get: { $0.strokeEnabled },
+            set: { $0.strokeEnabled = $1 }
+        )
+    }
+
+    private var strokeStyleBinding: Binding<ShapeFillStyle> {
+        makeBinding(
+            get: { $0.strokeStyle },
+            set: { $0.strokeStyle = $1 }
+        )
+    }
+
+    private var strokeColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.strokeColor },
+            set: { $0.strokeColor = $1 }
+        )
+    }
+
+    private var strokeGradientStartColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.strokeGradientStartColor },
+            set: { $0.strokeGradientStartColor = $1 }
+        )
+    }
+
+    private var strokeGradientEndColorBinding: Binding<CGColorComponents> {
+        makeBinding(
+            get: { $0.strokeGradientEndColor },
+            set: { $0.strokeGradientEndColor = $1 }
+        )
+    }
+
+    private var strokeGradientAngleBinding: Binding<Double> {
+        makeBinding(
+            get: { $0.strokeGradientAngle },
+            set: { $0.strokeGradientAngle = $1 }
+        )
+    }
+
+    private var strokeWidthBinding: Binding<Double> {
+        makeBinding(
+            get: { $0.strokeWidth },
+            set: { $0.strokeWidth = $1 }
+        )
+    }
+
+    private var cornerRadiusBinding: Binding<Double> {
+        makeBinding(
+            get: { $0.cornerRadius },
+            set: { $0.cornerRadius = $1 }
+        )
+    }
+
+    private func makeBinding<Value>(
+        get: @escaping (ShapeToolOptions) -> Value,
+        set: @escaping (inout ShapeToolOptions, Value) -> Void
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                if let options = selectedShapeOptions {
+                    return get(options)
+                }
+                return get(shapeOptions)
+            },
+            set: { newValue in
+                if let layerIndex = selectedShapeIndex {
+                    var options = selectedShapeOptions ?? ShapeToolOptions()
+                    set(&options, newValue)
+                    updateShapeStroke(at: layerIndex, with: options)
+                } else {
+                    set(&shapeOptions, newValue)
+                }
+            }
+        )
+    }
+
+    private var selectedShapeOptions: ShapeToolOptions? {
+        guard let layerIndex = selectedShapeIndex,
+              case .drawing(let drawing) = layers[layerIndex].source,
+              let stroke = drawing.strokes.first else { return nil }
+        return ShapeToolOptions(from: stroke)
+    }
+
+    private func updateShapeStroke(at layerIndex: Int, with options: ShapeToolOptions) {
+        guard case .drawing(var drawing) = layers[layerIndex].source,
+              drawing.strokes.indices.contains(0) else { return }
+        let tool = drawing.strokes[0].tool
+        drawing.strokes[0] = options.stroke(tool: tool)
+        layers[layerIndex].source = .drawing(drawing)
+    }
+
+    // MARK: - Actions
 
     private func select(tool: AssembleTool) {
         selectedTool = tool
@@ -1020,23 +1236,6 @@ struct AssembleToolsSidebar: View {
         }
     }
 
-    private func defaultShapePoints(for tool: DrawingTool) -> [DrawingPoint] {
-        switch tool {
-        case .rectangle, .ellipse:
-            return [
-                DrawingPoint(x: 0.35, y: 0.40),
-                DrawingPoint(x: 0.65, y: 0.60)
-            ]
-        case .line, .arrow:
-            return [
-                DrawingPoint(x: 0.30, y: 0.50),
-                DrawingPoint(x: 0.70, y: 0.50)
-            ]
-        default:
-            return []
-        }
-    }
-
     private func addTextLayer() {
         let textSource = TextSource(content: "New Text")
         let source = Source.text(textSource)
@@ -1054,8 +1253,31 @@ struct ShapeToolOptions {
     var gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1)
     var gradientAngle: Double = 0
     var strokeEnabled: Bool = true
+    var strokeStyle: ShapeFillStyle = .solid
     var strokeColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1)
+    var strokeGradientStartColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1)
+    var strokeGradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1)
+    var strokeGradientAngle: Double = 0
     var strokeWidth: Double = 4
+    var cornerRadius: Double = 0
+
+    init() {}
+
+    init(from stroke: DrawingStroke) {
+        self.fillStyle = stroke.fillStyle
+        self.fillColor = stroke.fillColor
+        self.gradientStartColor = stroke.gradientStartColor
+        self.gradientEndColor = stroke.gradientEndColor
+        self.gradientAngle = stroke.gradientAngle
+        self.strokeEnabled = stroke.strokeStyle != .none
+        self.strokeStyle = stroke.strokeStyle == .none ? .solid : stroke.strokeStyle
+        self.strokeColor = stroke.color
+        self.strokeGradientStartColor = stroke.strokeGradientStartColor
+        self.strokeGradientEndColor = stroke.strokeGradientEndColor
+        self.strokeGradientAngle = stroke.strokeGradientAngle
+        self.strokeWidth = stroke.width
+        self.cornerRadius = stroke.cornerRadius
+    }
 
     func stroke(tool: DrawingTool) -> DrawingStroke {
         DrawingStroke(
@@ -1067,7 +1289,12 @@ struct ShapeToolOptions {
             fillColor: fillColor,
             gradientStartColor: gradientStartColor,
             gradientEndColor: gradientEndColor,
-            gradientAngle: gradientAngle
+            gradientAngle: gradientAngle,
+            strokeStyle: strokeEnabled ? strokeStyle : .none,
+            strokeGradientStartColor: strokeGradientStartColor,
+            strokeGradientEndColor: strokeGradientEndColor,
+            strokeGradientAngle: strokeGradientAngle,
+            cornerRadius: cornerRadius
         )
     }
 
@@ -1096,6 +1323,16 @@ enum AssembleTool: String, CaseIterable, Identifiable {
     case line
     case arrow
     case text
+
+    init?(drawingTool: DrawingTool) {
+        switch drawingTool {
+        case .rectangle: self = .rectangle
+        case .ellipse: self = .ellipse
+        case .line: self = .line
+        case .arrow: self = .arrow
+        default: return nil
+        }
+    }
 
     var id: String { rawValue }
 

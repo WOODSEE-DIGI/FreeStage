@@ -358,6 +358,15 @@ struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
     var gradientEndColor: CGColorComponents
     var gradientAngle: Double
 
+    /// Stroke/border style (rectangle/ellipse/line/arrow).
+    var strokeStyle: ShapeFillStyle
+    var strokeGradientStartColor: CGColorComponents
+    var strokeGradientEndColor: CGColorComponents
+    var strokeGradientAngle: Double
+
+    /// Rectangle corner radius in normalized coordinates (0...1).
+    var cornerRadius: Double
+
     init(
         id: UUID = UUID(),
         points: [DrawingPoint] = [],
@@ -369,7 +378,12 @@ struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
         fillColor: CGColorComponents = CGColorComponents(r: 1, g: 0, b: 0, a: 1),
         gradientStartColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1),
         gradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1),
-        gradientAngle: Double = 0
+        gradientAngle: Double = 0,
+        strokeStyle: ShapeFillStyle = .solid,
+        strokeGradientStartColor: CGColorComponents = CGColorComponents(r: 1, g: 1, b: 1, a: 1),
+        strokeGradientEndColor: CGColorComponents = CGColorComponents(r: 0, g: 0, b: 0, a: 1),
+        strokeGradientAngle: Double = 0,
+        cornerRadius: Double = 0
     ) {
         self.id = id
         self.points = points
@@ -382,6 +396,11 @@ struct DrawingStroke: Identifiable, Hashable, Codable, Sendable {
         self.gradientStartColor = gradientStartColor
         self.gradientEndColor = gradientEndColor
         self.gradientAngle = gradientAngle
+        self.strokeStyle = strokeStyle
+        self.strokeGradientStartColor = strokeGradientStartColor
+        self.strokeGradientEndColor = strokeGradientEndColor
+        self.strokeGradientAngle = strokeGradientAngle
+        self.cornerRadius = cornerRadius
     }
 }
 
