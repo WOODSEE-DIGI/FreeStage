@@ -959,7 +959,7 @@ struct AssembleToolsSidebar: View {
                 Slider(value: positionXBinding, in: 0...1)
                 Text("\(Int(positionXBinding.wrappedValue * 100))%")
                     .monospacedDigit()
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
             }
 
@@ -970,7 +970,18 @@ struct AssembleToolsSidebar: View {
                 Slider(value: positionYBinding, in: 0...1)
                 Text("\(Int(positionYBinding.wrappedValue * 100))%")
                     .monospacedDigit()
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Text("S")
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+                Slider(value: uniformScaleBinding, in: 0.05...3.0)
+                Text("\(Int(uniformScaleBinding.wrappedValue * 100))%")
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
             }
 
@@ -981,7 +992,7 @@ struct AssembleToolsSidebar: View {
                 Slider(value: scaleXBinding, in: 0.05...3.0)
                 Text("\(Int(scaleXBinding.wrappedValue * 100))%")
                     .monospacedDigit()
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
             }
 
@@ -992,7 +1003,7 @@ struct AssembleToolsSidebar: View {
                 Slider(value: scaleYBinding, in: 0.05...3.0)
                 Text("\(Int(scaleYBinding.wrappedValue * 100))%")
                     .monospacedDigit()
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
             }
 
@@ -1003,7 +1014,7 @@ struct AssembleToolsSidebar: View {
                 Slider(value: rotationBinding, in: 0...360, step: 1)
                 Text("\(Int(rotationBinding.wrappedValue))°")
                     .monospacedDigit()
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
                     .lineLimit(1)
             }
         }
@@ -1261,6 +1272,23 @@ struct AssembleToolsSidebar: View {
         makeTransformBinding(
             get: { $0.rotation },
             set: { $0.rotation = $1 }
+        )
+    }
+
+    private var uniformScaleBinding: Binding<Double> {
+        Binding(
+            get: {
+                guard let layerIndex = selectedShapeIndex else { return 1.0 }
+                let transform = layers[layerIndex].transform
+                return (transform.scaleX + transform.scaleY) / 2
+            },
+            set: { newValue in
+                guard let layerIndex = selectedShapeIndex else { return }
+                var transform = layers[layerIndex].transform
+                transform.scaleX = newValue
+                transform.scaleY = newValue
+                layers[layerIndex].transform = transform
+            }
         )
     }
 
