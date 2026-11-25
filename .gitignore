@@ -9,3 +9,8 @@ build/
 *.swp
 *.swo
 *~
+*.dmg
+Obsbot/*.bin
+continue-*.json
+dualcast-*.json
+*.xcuserdatad/
