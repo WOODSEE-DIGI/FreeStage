@@ -2,7 +2,7 @@
 
 A native macOS live production switcher and show sequencer.
 
-FreeStage is designed as an OBS alternative with a focus on clarity, direct manipulation, and a QLab/CueCam-style show workflow. You build a show as an ordered list of cues — each cue fires a scene — and progress through the show while recording or streaming.
+FreeStage is designed as an OBS alternative with a focus on organising a show and then recording it in a QLab/CueCam-style show workflow. 
 
 ## Screenshots
 
