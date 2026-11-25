@@ -159,4 +159,9 @@ xattr -dr com.apple.quarantine /Applications/FreeStage.app
 
 ## License
 
-TBD.
+**PolyForm Noncommercial 1.0.0** — see [LICENSE](LICENSE).
+
+Free to use, copy, modify, and share for **non-commercial** purposes.
+Commercial use of any kind (selling, charging for, or commercially
+redistributing FreeStage or derivatives) requires a commercial license
+from the author — contact via [swiftmaestro.com](https://swiftmaestro.com/contact.html).
